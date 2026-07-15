@@ -1,163 +1,180 @@
-const fs = require('fs');
-const path = require('path');
-const bcrypt = require('bcryptjs');
+const { MongoClient } = require('mongodb');
 
-const dataFile = path.join(__dirname, 'data.json');
+// MongoDB 连接字符串
+const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017';
+const client = new MongoClient(uri);
 
-// 初始化数据文件
-function initDataFile() {
-    if (!fs.existsSync(dataFile)) {
-        const initialData = {
-            users: [],
-            checkins: [],
-            tasks: [],
-            userIdCounter: 1,
-            checkinIdCounter: 1,
-            taskIdCounter: 1
-        };
-        fs.writeFileSync(dataFile, JSON.stringify(initialData, null, 2));
+let db;
+let usersCollection;
+let checkinsCollection;
+let tasksCollection;
+
+// 初始化数据库连接
+async function initDatabase() {
+    try {
+        await client.connect();
+        console.log('✅ 成功连接到 MongoDB');
+        
+        db = client.db('checkin-system');
+        usersCollection = db.collection('users');
+        checkinsCollection = db.collection('checkins');
+        tasksCollection = db.collection('tasks');
+        
+        // 创建索引
+        await usersCollection.createIndex({ username: 1 }, { unique: true });
+        await checkinsCollection.createIndex({ user_id: 1, checkin_date: 1 }, { unique: true });
+        
+        console.log('✅ 数据库集合和索引创建成功');
+    } catch (err) {
+        console.error('❌ 数据库连接失败:', err);
+        process.exit(1);
     }
-}
-
-// 读取数据
-function readData() {
-    initDataFile();
-    const data = fs.readFileSync(dataFile, 'utf8');
-    return JSON.parse(data);
-}
-
-// 保存数据
-function saveData(data) {
-    fs.writeFileSync(dataFile, JSON.stringify(data, null, 2));
 }
 
 // 用户相关方法
 module.exports = {
+    initDatabase,
+    
     // 创建用户
     async createUser(username, password, nickname) {
-        const data = readData();
-        const existingUser = data.users.find(u => u.username === username);
-        if (existingUser) {
-            throw new Error('用户名已存在');
-        }
-        
-        const hashedPassword = await bcrypt.hash(password, 10);
-        const newUser = {
-            id: data.userIdCounter++,
+        const result = await usersCollection.insertOne({
             username,
-            password: hashedPassword,
+            password,
             nickname: nickname || username,
             created_at: new Date().toISOString()
+        });
+        return { 
+            id: result.insertedId.toString(), 
+            username, 
+            nickname: nickname || username 
         };
-        
-        data.users.push(newUser);
-        saveData(data);
-        return newUser;
     },
 
     // 查找用户
-    findUser(username) {
-        const data = readData();
-        return data.users.find(u => u.username === username);
+    async findUser(username) {
+        return await usersCollection.findOne({ username });
+    },
+
+    // 查找用户 by ID
+    async findUserById(userId) {
+        const { ObjectId } = require('mongodb');
+        return await usersCollection.findOne({ _id: new ObjectId(userId) });
     },
 
     // 创建打卡记录
-    createCheckin(userId, date, content = '') {
-        const data = readData();
+    async createCheckin(userId, date, content = '') {
+        const existing = await checkinsCollection.findOne({
+            user_id: userId,
+            checkin_date: date
+        });
         
-        const existing = data.checkins.find(
-            c => c.user_id === userId && c.checkin_date === date
-        );
         if (existing) {
             throw new Error('今天已经打卡过了');
         }
         
-        const newCheckin = {
-            id: data.checkinIdCounter++,
+        const result = await checkinsCollection.insertOne({
             user_id: userId,
             checkin_date: date,
             content,
             created_at: new Date().toISOString()
-        };
+        });
         
-        data.checkins.push(newCheckin);
-        saveData(data);
-        return newCheckin;
+        return { 
+            id: result.insertedId.toString(), 
+            user_id: userId, 
+            checkin_date: date, 
+            content 
+        };
     },
 
     // 获取今日打卡
-    getTodayCheckin(userId, date) {
-        const data = readData();
-        return data.checkins.find(
-            c => c.user_id === userId && c.checkin_date === date
-        );
+    async getTodayCheckin(userId, date) {
+        const checkin = await checkinsCollection.findOne({
+            user_id: userId,
+            checkin_date: date
+        });
+        
+        if (checkin) {
+            return {
+                id: checkin._id.toString(),
+                user_id: checkin.user_id,
+                checkin_date: checkin.checkin_date,
+                content: checkin.content,
+                created_at: checkin.created_at
+            };
+        }
+        return null;
     },
 
     // 创建任务
-    createTask(userId, checkinId, content) {
-        const data = readData();
+    async createTask(userId, checkinId, content) {
+        const { ObjectId } = require('mongodb');
         
-        const newTask = {
-            id: data.taskIdCounter++,
+        const result = await tasksCollection.insertOne({
             user_id: userId,
-            checkin_id: checkinId,
+            checkin_id: new ObjectId(checkinId),
             content,
             completed: 0,
             created_at: new Date().toISOString()
-        };
+        });
         
-        data.tasks.push(newTask);
-        saveData(data);
-        return newTask;
+        return { 
+            id: result.insertedId.toString(), 
+            user_id: userId, 
+            checkin_id: checkinId, 
+            content 
+        };
     },
 
     // 获取今日任务
-    getTodayTasks(userId, date) {
-        const data = readData();
-        const checkin = data.checkins.find(
-            c => c.user_id === userId && c.checkin_date === date
-        );
+    async getTodayTasks(userId, date) {
+        const checkin = await checkinsCollection.findOne({
+            user_id: userId,
+            checkin_date: date
+        });
         
         if (!checkin) return [];
         
-        return data.tasks.filter(t => t.checkin_id === checkin.id);
+        const tasks = await tasksCollection.find({ 
+            checkin_id: checkin._id 
+        }).toArray();
+        
+        return tasks.map(task => ({
+            id: task._id.toString(),
+            user_id: task.user_id,
+            checkin_id: task.checkin_id.toString(),
+            content: task.content,
+            completed: task.completed,
+            created_at: task.created_at
+        }));
     },
 
     // 完成任务
-    completeTask(taskId, userId) {
-        const data = readData();
-        const task = data.tasks.find(t => t.id === taskId && t.user_id === userId);
+    async completeTask(taskId, userId) {
+        const { ObjectId } = require('mongodb');
         
-        if (task) {
-            task.completed = 1;
-            saveData(data);
-        }
-        
-        return task;
+        await tasksCollection.updateOne(
+            { _id: new ObjectId(taskId), user_id: userId },
+            { $set: { completed: 1 } }
+        );
     },
 
     // 删除任务
-    deleteTask(taskId, userId) {
-        const data = readData();
-        const index = data.tasks.findIndex(t => t.id === taskId && t.user_id === userId);
+    async deleteTask(taskId, userId) {
+        const { ObjectId } = require('mongodb');
         
-        if (index !== -1) {
-            data.tasks.splice(index, 1);
-            saveData(data);
-            return true;
-        }
-        
-        return false;
+        const result = await tasksCollection.deleteOne({
+            _id: new ObjectId(taskId),
+            user_id: userId
+        });
+        return result.deletedCount > 0;
     },
 
     // 获取统计数据
-    getStats(userId) {
-        const data = readData();
+    async getStats(userId) {
+        const totalDays = await checkinsCollection.countDocuments({ user_id: userId });
         
-        const userCheckins = data.checkins.filter(c => c.user_id === userId);
-        const userTasks = data.tasks.filter(t => t.user_id === userId);
-        
-        const totalDays = userCheckins.length;
+        const userTasks = await tasksCollection.find({ user_id: userId }).toArray();
         const totalTasks = userTasks.length;
         const completedTasks = userTasks.filter(t => t.completed === 1).length;
         
@@ -172,23 +189,30 @@ module.exports = {
     },
 
     // 获取打卡历史
-    getHistory(userId, limit = 30) {
-        const data = readData();
+    async getHistory(userId, limit = 30) {
+        const checkins = await checkinsCollection
+            .find({ user_id: userId })
+            .sort({ checkin_date: -1 })
+            .limit(limit)
+            .toArray();
         
-        const userCheckins = data.checkins
-            .filter(c => c.user_id === userId)
-            .sort((a, b) => new Date(b.checkin_date) - new Date(a.checkin_date))
-            .slice(0, limit);
-        
-        return userCheckins.map(checkin => {
-            const tasks = data.tasks.filter(t => t.checkin_id === checkin.id);
+        const history = await Promise.all(checkins.map(async (checkin) => {
+            const tasks = await tasksCollection.find({ 
+                checkin_id: checkin._id 
+            }).toArray();
             const completedTasks = tasks.filter(t => t.completed === 1).length;
             
             return {
-                ...checkin,
+                id: checkin._id.toString(),
+                user_id: checkin.user_id,
+                checkin_date: checkin.checkin_date,
+                content: checkin.content,
+                created_at: checkin.created_at,
                 taskCount: tasks.length,
                 completedTaskCount: completedTasks
             };
-        });
+        }));
+        
+        return history;
     }
 };
