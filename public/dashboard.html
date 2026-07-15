@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>打卡主页</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📚 学习打卡系统</h1>
+            <div class="user-info">
+                <span id="userName">用户</span>
+                <button onclick="logout()" class="btn-secondary">退出登录</button>
+            </div>
+        </header>
+
+        <div class="date" id="currentDate"></div>
+
+        <button class="check-in-btn" id="checkInBtn" onclick="checkIn()">
+            ✅ 今日打卡
+        </button>
+
+        <div class="task-section" id="taskSection" style="display: none;">
+            <div class="task-input-wrapper">
+                <input type="text" class="task-input" id="taskInput" placeholder="输入今天的学习任务...">
+                <button class="add-task-btn" onclick="addTask()">添加</button>
+            </div>
+            
+            <ul class="task-list" id="taskList"></ul>
+        </div>
+
+        <div class="stats">
+            <h3>📊 学习统计</h3>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="stat-number" id="totalDays">0</div>
+                    <div class="stat-label">打卡天数</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" id="totalTasks">0</div>
+                    <div class="stat-label">完成任务</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" id="completionRate">0%</div>
+                    <div class="stat-label">完成率</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="history">
+            <h3>📅 打卡历史</h3>
+            <div id="historyList"></div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        // 页面加载时检查登录状态
+        checkAuth();
+        initDashboard();
+    </script>
+</body>
+</html>
