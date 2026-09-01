@@ -5,9 +5,62 @@
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    background: radial-gradient(circle at top left, #444444, #111111, #000000);
+    background-size: 150% 150%;
     min-height: 100vh;
+    animation: bgMove 12s ease infinite alternate;
+}
+
+@keyframes bgMove {
+    0% {
+        background-position: 0% 0%;
+    }
+
+    100% {
+        background-position: 100% 100%;
+    }
+}
+
+/* ========== 登录页炫酷动画增强 ========== */
+.particles-bg {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    z-index: 0;
+    pointer-events: none;
+}
+
+.particle {
+    position: absolute;
+    width: 2px;
+    height: 2px;
+    background: rgba(255, 255, 255, 0.35);
+    border-radius: 50%;
+    animation: floatParticle 8s linear infinite;
+}
+
+@keyframes floatParticle {
+    0% {
+        transform: translateY(100vh) scale(1);
+        opacity: 0;
+    }
+
+    10% {
+        opacity: 1;
+    }
+
+    90% {
+        opacity: 1;
+    }
+
+    100% {
+        transform: translateY(-10vh) scale(0.5);
+        opacity: 0;
+    }
 }
 
 /* 登录注册页样式 */
@@ -17,21 +70,51 @@ body {
     align-items: center;
     min-height: 100vh;
     padding: 20px;
+    position: relative;
+    z-index: 1;
 }
 
 .auth-box {
-    background: white;
+    background: rgba(255, 255, 255, 0.08);
     border-radius: 20px;
     padding: 40px;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
     width: 100%;
     max-width: 450px;
+    animation: authBoxFadeIn 0.8s ease-out;
+}
+
+@keyframes authBoxFadeIn {
+    0% {
+        opacity: 0;
+        transform: translateY(30px) scale(0.95);
+    }
+
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
 }
 
 .auth-box h1 {
     text-align: center;
     margin-bottom: 30px;
-    color: #333;
+    color: #ffffff;
+    position: relative;
+    animation: titleGlow 2s ease-in-out infinite alternate;
+}
+
+@keyframes titleGlow {
+    0% {
+        text-shadow: 0 0 8px rgba(255, 255, 255, 0.4);
+    }
+
+    100% {
+        text-shadow: 0 0 18px rgba(255, 255, 255, 0.8), 0 0 30px rgba(100, 100, 100, 0.4);
+    }
 }
 
 .tabs {
@@ -43,23 +126,62 @@ body {
 
 .tab {
     flex: 1;
-    padding: 15px;
+    padding: 14px;
     border: none;
-    background: #f0f0f0;
+    background: rgba(255, 255, 255, 0.07);
     cursor: pointer;
+    color: #cccccc;
     font-size: 16px;
     transition: all 0.3s;
+    position: relative;
+    overflow: hidden;
+}
+
+.tab::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    transition: width 0.4s ease-out, height 0.4s ease-out;
+}
+
+.tab:active::after {
+    width: 120%;
+    height: 120%;
 }
 
 .tab.active {
-    background: #667eea;
-    color: white;
+    background: #1a1a1a;
+    color: #fff;
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.15);
+}
+
+.tab:hover:not(.active) {
+    background: rgba(255, 255, 255, 0.12);
 }
 
 .auth-form {
     display: flex;
     flex-direction: column;
     gap: 20px;
+    animation: formFadeIn 0.4s ease-out;
+}
+
+@keyframes formFadeIn {
+    0% {
+        opacity: 0;
+        transform: translateX(-10px);
+    }
+
+    100% {
+        opacity: 1;
+        transform: translateX(0);
+    }
 }
 
 .form-group {
@@ -69,47 +191,108 @@ body {
 }
 
 .form-group label {
-    font-weight: 600;
-    color: #4a5568;
+    font-weight: 500;
+    color: #eeeeee;
 }
 
 .form-group input {
     padding: 12px 16px;
-    border: 2px solid #e2e8f0;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.18);
     border-radius: 8px;
-    font-size: 15px;
+    color: #fff;
     outline: none;
-    transition: border-color 0.3s;
+    transition: 0.3s;
+}
+
+.form-group input::placeholder {
+    color: #999999;
 }
 
 .form-group input:focus {
-    border-color: #667eea;
+    border-color: rgba(255, 255, 255, 0.6);
+    box-shadow: 0 0 12px rgba(255, 255, 255, 0.12);
+    animation: inputPulse 0.6s ease-out;
+}
+
+@keyframes inputPulse {
+    0% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.02);
+    }
+
+    100% {
+        transform: scale(1);
+    }
 }
 
 .btn-primary {
     padding: 15px;
-    background: #667eea;
-    color: white;
-    border: none;
+    background: #111111;
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 8px;
     font-size: 16px;
-    font-weight: 600;
     cursor: pointer;
-    transition: all 0.3s;
+    transition: 0.3s;
+    position: relative;
+    overflow: hidden;
+}
+
+.btn-primary::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.5s ease;
+}
+
+.btn-primary:hover::before {
+    left: 100%;
 }
 
 .btn-primary:hover {
-    background: #5568d3;
     transform: translateY(-2px);
+    background: #2c2c2c;
+    box-shadow: 0 8px 20px rgba(255, 255, 255, 0.15);
+}
+
+.btn-primary:active {
+    animation: btnPress 0.2s ease;
+}
+
+@keyframes btnPress {
+    0% {
+        transform: translateY(-2px);
+    }
+
+    50% {
+        transform: translateY(1px);
+    }
+
+    100% {
+        transform: translateY(-2px);
+    }
 }
 
 .btn-secondary {
     padding: 8px 16px;
-    background: #718096;
+    background: rgba(255, 255, 255, 0.1);
     color: white;
-    border: none;
+    border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: 6px;
     cursor: pointer;
+    transition: 0.3s;
+}
+
+.btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.18);
 }
 
 .message {
@@ -118,6 +301,19 @@ body {
     border-radius: 8px;
     text-align: center;
     display: none;
+    animation: messageSlideIn 0.4s ease-out;
+}
+
+@keyframes messageSlideIn {
+    0% {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .message.show {
@@ -134,7 +330,7 @@ body {
     color: #820014;
 }
 
-/* 主页样式 */
+/* ========== 主页全部改为玻璃拟态暗黑 ========== */
 .container {
     max-width: 800px;
     margin: 0 auto;
@@ -145,21 +341,25 @@ header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: white;
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
     padding: 20px 30px;
     border-radius: 15px;
     margin-bottom: 20px;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
 }
 
 header h1 {
-    color: #333;
+    color: #ffffff;
 }
 
 .user-info {
     display: flex;
     align-items: center;
     gap: 15px;
+    color: #eee;
 }
 
 .date {
@@ -167,7 +367,7 @@ header h1 {
     color: white;
     font-size: 18px;
     margin-bottom: 30px;
-    background: rgba(255,255,255,0.2);
+    background: rgba(255, 255, 255, 0.2);
     padding: 10px;
     border-radius: 10px;
 }
@@ -176,9 +376,9 @@ header h1 {
     width: 100%;
     padding: 25px;
     font-size: 20px;
-    background: #667eea;
+    background: #1a1a1a;
     color: white;
-    border: none;
+    border: 1px solid rgba(255, 255, 255, 0.18);
     border-radius: 15px;
     cursor: pointer;
     transition: all 0.3s;
@@ -187,9 +387,9 @@ header h1 {
 }
 
 .check-in-btn:hover {
-    background: #5568d3;
+    background: #2c2c2c;
     transform: translateY(-3px);
-    box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+    box-shadow: 0 10px 25px rgba(255, 255, 255, 0.15);
 }
 
 .check-in-btn.checked {
@@ -198,11 +398,14 @@ header h1 {
 }
 
 .task-section {
-    background: white;
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
     padding: 30px;
     border-radius: 15px;
     margin-bottom: 20px;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
 }
 
 .task-input-wrapper {
@@ -214,24 +417,36 @@ header h1 {
 .task-input {
     flex: 1;
     padding: 15px;
-    border: 2px solid #e2e8f0;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.18);
     border-radius: 10px;
     font-size: 15px;
+    color: #fff;
     outline: none;
 }
 
+.task-input::placeholder {
+    color: #999;
+}
+
 .task-input:focus {
-    border-color: #667eea;
+    border-color: rgba(255, 255, 255, 0.6);
+    box-shadow: 0 0 12px rgba(255, 255, 255, 0.12);
 }
 
 .add-task-btn {
     padding: 15px 30px;
-    background: #667eea;
+    background: #1a1a1a;
     color: white;
-    border: none;
+    border: 1px solid rgba(255, 255, 255, 0.18);
     border-radius: 10px;
     cursor: pointer;
     font-weight: 600;
+    transition: 0.3s;
+}
+
+.add-task-btn:hover {
+    background: #2c2c2c;
 }
 
 .task-list {
@@ -242,14 +457,14 @@ header h1 {
     display: flex;
     align-items: center;
     padding: 15px;
-    background: #f7fafc;
+    background: rgba(255, 255, 255, 0.06);
     border-radius: 10px;
     margin-bottom: 10px;
     transition: all 0.3s;
 }
 
 .task-item:hover {
-    background: #edf2f7;
+    background: rgba(255, 255, 255, 0.12);
     transform: translateX(5px);
 }
 
@@ -263,12 +478,12 @@ header h1 {
 .task-text {
     flex: 1;
     font-size: 15px;
-    color: #2d3748;
+    color: #eeeeee;
 }
 
 .task-text.completed {
     text-decoration: line-through;
-    color: #a0aec0;
+    color: #888888;
 }
 
 .delete-btn {
@@ -288,16 +503,19 @@ header h1 {
 }
 
 .stats {
-    background: white;
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
     padding: 30px;
     border-radius: 15px;
     margin-bottom: 20px;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
 }
 
 .stats h3 {
     margin-bottom: 20px;
-    color: #4a5568;
+    color: #eeeeee;
 }
 
 .stats-grid {
@@ -308,7 +526,7 @@ header h1 {
 
 .stat-item {
     padding: 20px;
-    background: #f7fafc;
+    background: rgba(255, 255, 255, 0.06);
     border-radius: 12px;
     text-align: center;
 }
@@ -316,50 +534,93 @@ header h1 {
 .stat-number {
     font-size: 32px;
     font-weight: bold;
-    color: #667eea;
+    color: #ffffff;
 }
 
 .stat-label {
     font-size: 14px;
-    color: #718096;
+    color: #aaaaaa;
     margin-top: 5px;
 }
 
 .history {
-    background: white;
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
     padding: 30px;
     border-radius: 15px;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
 }
 
 .history h3 {
     margin-bottom: 20px;
-    color: #4a5568;
+    color: #eeeeee;
 }
 
 .history-item {
     padding: 15px;
-    background: #f7fafc;
+    background: rgba(255, 255, 255, 0.06);
     border-radius: 10px;
     margin-bottom: 10px;
 }
 
 .history-date {
     font-weight: 600;
-    color: #667eea;
+    color: #ffffff;
     margin-bottom: 5px;
 }
 
 .history-content {
-    color: #4a5568;
+    color: #cccccc;
     font-size: 14px;
+}
+
+/* ========== 排行榜样式 ========== */
+.rank-section #rankList {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.rank-item {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 16px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+}
+
+.rank-me {
+    border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.rank-index {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+}
+
+.rank-name {
+    flex: 1;
+    color: #eee;
+}
+
+.rank-days {
+    color: #aaa;
 }
 
 @media (max-width: 600px) {
     .stats-grid {
         grid-template-columns: 1fr;
     }
-    
+
     header {
         flex-direction: column;
         gap: 15px;
