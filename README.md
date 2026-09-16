@@ -8,6 +8,8 @@
 ## 功能
 
 - 邮箱 + 密码注册登录
+- 忘记密码：通过邮件重置链接设置新密码
+- 人机验证：登录、注册、找回密码均受 Cloudflare Turnstile 保护
 - 每日打卡（每人每天一次，重复打卡会被拦截）
 - 任务管理：添加、勾选完成/取消、删除
 - 学习统计：连续天数、打卡天数、完成任务数、完成率
@@ -48,38 +50,22 @@
 1. 到 https://supabase.com 注册并新建一个免费 Project
 2. 打开 **SQL Editor**，把 `supabase/schema.sql` 的内容整段粘贴执行
 
-### 2. 配置自定义 SMTP（必须）
+### 2. 关闭邮箱验证
 
-Supabase 自带的邮件服务只能发送到**项目团队成员**的邮箱，且限流为**每小时 2 封**，
-正式使用会报 `Email address not authorized`，因此必须配置自定义 SMTP。
+**Authentication → Sign In / Providers → Email** → 关闭 **Confirm email**。
 
-推荐 **Brevo**（免费 300 封/天，无需自有域名）或 **Resend**（需已验证域名）。
+关闭后注册即可直接登录，无需去邮箱确认。
 
-拿到 SMTP 主机、端口、用户名、密码后，到
-https://supabase.com/dashboard/project/_/auth/smtp 填入，并设置发件人地址与名称。
+### 3. 配置站点地址（找回密码需要）
 
-### 3. 开启邮箱验证并改为验证码模板
-
-1. **Authentication → Sign In / Providers → Email** → **打开 Confirm email**
-2. **Authentication → Email Templates → Confirm sign up**，改成：
-
-主题：
+**Authentication → URL Configuration** → 把 **Site URL** 改成线上地址：
 
 ```
-{{ .Token }} 是你的验证码
+https://weiheyi.github.io/Checkin-System/
 ```
 
-正文：
-
-```html
-<h2>验证你的邮箱</h2>
-<p>你正在注册「学习打卡系统」，验证码如下：</p>
-<p style="font-size:32px;font-weight:bold;letter-spacing:6px;">{{ .Token }}</p>
-<p>验证码 24 小时内有效，请勿转发给他人。</p>
-```
-
-> `{{ .Token }}` 就是 6 位验证码。用验证码替代确认链接，可以避开部分邮箱
-> （如 Microsoft Defender Safe Links）预取链接导致 token 提前失效的问题。
+> 用户点击找回密码邮件里的链接后会被重定向到这个地址。
+> 若这里仍是 `http://localhost:3000`，线上点击链接会跳到错误的地方。
 
 ### 4. 配置人机验证（Cloudflare Turnstile）
 
@@ -106,6 +92,20 @@ export const TURNSTILE_SITE_KEY = '你的 Turnstile Site Key';
 > `anon key` 与 Turnstile `Site Key` 设计上都是可以公开的，
 > 安全性分别由数据库的 RLS 策略和 Supabase 侧的 Secret Key 保证。
 > 请务必确认 `schema.sql` 里的 RLS 语句全部执行成功。
+
+### 6. （可选）配置自定义 SMTP
+
+**默认不需要配置。** Supabase 自带的邮件服务就能发出找回密码邮件，但有两个限制：
+
+- 只能发送到**项目团队成员**的邮箱（也就是你注册 Supabase 时用的那个邮箱）
+- 每小时最多 2 封
+
+只有当你想让**其他邮箱注册的账号**也能找回密码时，才需要配置自定义 SMTP
+（推荐 Brevo，免费 300 封/天，无需自有域名）：
+
+```
+https://supabase.com/dashboard/project/_/auth/smtp
+```
 
 ## 本地预览
 

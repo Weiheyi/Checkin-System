@@ -5,16 +5,18 @@ import { $, $$, showFormMessage, setLoading } from './ui.js';
 
 const loginForm = $('#loginForm');
 const registerForm = $('#registerForm');
+const forgotPanel = $('#forgotPanel');
+const resetPanel = $('#resetPanel');
 const tabsBar = $('#tabsBar');
-const verifyPanel = $('#verifyPanel');
 const loginMessage = $('#loginMessage');
 const registerMessage = $('#registerMessage');
-const verifyMessage = $('#verifyMessage');
+const forgotMessage = $('#forgotMessage');
+const resetMessage = $('#resetMessage');
 
 /* ---------------- 人机验证（Cloudflare Turnstile） ---------------- */
 
-const captchaTokens = { login: '', register: '', verify: '' };
-const captchaWidgets = { login: null, register: null, verify: null };
+const captchaTokens = { login: '', register: '', forgot: '' };
+const captchaWidgets = { login: null, register: null, forgot: null };
 
 const captchaConfigured = !!TURNSTILE_SITE_KEY;
 let captchaLoaded = false;
@@ -80,71 +82,49 @@ function initCaptcha() {
 
 /* ---------------- 面板切换 ---------------- */
 
-function switchTab(mode) {
-    const isLogin = mode === 'login';
-    loginForm.classList.toggle('hidden', !isLogin);
-    registerForm.classList.toggle('hidden', isLogin);
-    $$('.tab').forEach(tab => {
-        const active = tab.dataset.tab === mode;
-        tab.classList.toggle('active', active);
-        tab.setAttribute('aria-selected', String(active));
-    });
-}
+// name: 'login' | 'register' | 'forgot' | 'reset'
+function showPanel(name) {
+    const isTab = name === 'login' || name === 'register';
 
-let pendingEmail = '';
-let resendTimer = null;
+    tabsBar.classList.toggle('hidden', !isTab);
+    loginForm.classList.toggle('hidden', name !== 'login');
+    registerForm.classList.toggle('hidden', name !== 'register');
+    forgotPanel.classList.toggle('hidden', name !== 'forgot');
+    resetPanel.classList.toggle('hidden', name !== 'reset');
 
-function showVerifyPanel(email) {
-    pendingEmail = email;
-    $('#verifyEmail').textContent = email;
-    $('#verifyCode').value = '';
-    verifyMessage.className = 'form-message';
+    if (isTab) {
+        $$('.tab').forEach(tab => {
+            const active = tab.dataset.tab === name;
+            tab.classList.toggle('active', active);
+            tab.setAttribute('aria-selected', String(active));
+        });
+    }
 
-    tabsBar.classList.add('hidden');
-    loginForm.classList.add('hidden');
-    registerForm.classList.add('hidden');
-    verifyPanel.classList.remove('hidden');
-
-    // 面板显示后再渲染，避免在隐藏容器里渲染异常
-    renderWidget('verify', '#verifyCaptcha');
-    $('#verifyCode').focus();
-    startResendCountdown();
-}
-
-function hideVerifyPanel() {
-    clearInterval(resendTimer);
-    verifyPanel.classList.add('hidden');
-    tabsBar.classList.remove('hidden');
-    switchTab('login');
-}
-
-function startResendCountdown(seconds = 60) {
-    const button = $('#resendBtn');
-    let left = seconds;
-    clearInterval(resendTimer);
-    button.disabled = true;
-    button.textContent = `重新发送（${left}s）`;
-
-    resendTimer = setInterval(() => {
-        left -= 1;
-        if (left <= 0) {
-            clearInterval(resendTimer);
-            button.disabled = false;
-            button.textContent = '重新发送验证码';
-            return;
-        }
-        button.textContent = `重新发送（${left}s）`;
-    }, 1000);
+    if (name === 'forgot') {
+        forgotMessage.className = 'form-message';
+        renderWidget('forgot', '#forgotCaptcha');
+        $('#forgotEmail').focus();
+    }
+    if (name === 'reset') {
+        resetMessage.className = 'form-message';
+        $('#newPassword').focus();
+    }
 }
 
 function enterApp() {
     location.href = PAGES.dashboard;
 }
 
+// 用户点击邮件里的重置链接进来时，地址栏会带有 type=recovery
+function enterRecoveryMode() {
+    history.replaceState(null, '', location.pathname);
+    showPanel('reset');
+}
+
 /* ---------------- 事件绑定 ---------------- */
 
 $$('.tab').forEach(tab => {
-    tab.addEventListener('click', () => switchTab(tab.dataset.tab));
+    tab.addEventListener('click', () => showPanel(tab.dataset.tab));
 });
 
 loginForm.addEventListener('submit', async e => {
@@ -198,18 +178,7 @@ registerForm.addEventListener('submit', async e => {
     const button = $('button[type=submit]', registerForm);
     setLoading(button, true);
     try {
-        const result = await api.register({
-            email,
-            nickname,
-            password,
-            captchaToken: tokenOf('register')
-        });
-
-        // 需要邮箱验证码，切到验证面板
-        if (result && result.pending) {
-            showVerifyPanel(result.email);
-            return;
-        }
+        await api.register({ email, nickname, password, captchaToken: tokenOf('register') });
         enterApp();
     } catch (err) {
         showFormMessage(registerMessage, err.message);
@@ -219,54 +188,82 @@ registerForm.addEventListener('submit', async e => {
     }
 });
 
-$('#verifyBtn').addEventListener('click', async () => {
-    const code = $('#verifyCode').value.trim();
-    if (!/^\d{6}$/.test(code)) {
-        return showFormMessage(verifyMessage, '请输入 6 位数字验证码');
+$('#forgotLink').addEventListener('click', () => {
+    $('#forgotEmail').value = $('#loginEmail').value.trim();
+    showPanel('forgot');
+});
+
+$('#forgotBack').addEventListener('click', () => showPanel('login'));
+
+$('#forgotBtn').addEventListener('click', async () => {
+    const email = $('#forgotEmail').value.trim();
+    if (!email) {
+        return showFormMessage(forgotMessage, '请输入邮箱');
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return showFormMessage(forgotMessage, '邮箱格式不正确');
     }
 
-    const button = $('#verifyBtn');
+    const problem = captchaProblem('forgot');
+    if (problem) return showFormMessage(forgotMessage, problem);
+
+    const button = $('#forgotBtn');
     setLoading(button, true);
     try {
-        await api.verifyEmailCode({ email: pendingEmail, token: code });
-        enterApp();
+        await api.forgotPassword({ email, captchaToken: tokenOf('forgot') });
+        // 未注册的邮箱也会返回成功（防止账号枚举），所以文案保持中性
+        showFormMessage(forgotMessage, '重置邮件已发出，请查收邮箱（也看看垃圾箱）', 'success');
     } catch (err) {
-        showFormMessage(verifyMessage, err.message);
+        showFormMessage(forgotMessage, err.message);
+    } finally {
+        setLoading(button, false);
+        resetCaptcha('forgot');
+    }
+});
+
+$('#resetBtn').addEventListener('click', async () => {
+    const password = $('#newPassword').value;
+    const passwordConfirm = $('#newPasswordConfirm').value;
+
+    if (password.length < 6) {
+        return showFormMessage(resetMessage, '密码至少 6 位');
+    }
+    if (password !== passwordConfirm) {
+        return showFormMessage(resetMessage, '两次密码输入不一致');
+    }
+
+    const button = $('#resetBtn');
+    setLoading(button, true);
+    try {
+        await api.updatePassword(password);
+        // 让用户用新密码重新登录一次，流程更清晰
+        await api.logout();
+        showPanel('login');
+        showFormMessage(loginMessage, '密码已修改，请用新密码登录', 'success');
+    } catch (err) {
+        showFormMessage(resetMessage, err.message);
     } finally {
         setLoading(button, false);
     }
 });
 
-$('#verifyCode').addEventListener('keydown', e => {
-    if (e.key === 'Enter') $('#verifyBtn').click();
+$('#forgotEmail').addEventListener('keydown', e => {
+    if (e.key === 'Enter') $('#forgotBtn').click();
 });
 
-$('#resendBtn').addEventListener('click', async () => {
-    const problem = captchaProblem('verify');
-    if (problem) {
-        return showFormMessage(verifyMessage, problem);
-    }
-
-    const button = $('#resendBtn');
-    button.disabled = true;
-    try {
-        await api.resendVerifyEmail({ email: pendingEmail, captchaToken: tokenOf('verify') });
-        resetCaptcha('verify');
-        showFormMessage(verifyMessage, '验证码已重新发送，请查收邮件', 'success');
-        startResendCountdown();
-    } catch (err) {
-        showFormMessage(verifyMessage, err.message);
-        button.disabled = false;
-    }
+$('#newPasswordConfirm').addEventListener('keydown', e => {
+    if (e.key === 'Enter') $('#resetBtn').click();
 });
-
-$('#backToLogin').addEventListener('click', hideVerifyPanel);
 
 /* ---------------- 初始化 ---------------- */
 
 initCaptcha();
+api.onPasswordRecovery(enterRecoveryMode);
 
-if (store.isLoggedIn()) {
+// 通过重置链接进来时不能跳走，否则用户就没机会改密码了
+const inRecovery = /type=recovery/.test(location.hash);
+
+if (!inRecovery && store.isLoggedIn()) {
     api.me()
         .then(() => location.replace(PAGES.dashboard))
         .catch(() => {});

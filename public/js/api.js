@@ -99,12 +99,13 @@ function translateAuthError(error) {
     const message = (error && error.message) || '操作失败';
     if (/Invalid login credentials/i.test(message)) return '邮箱或密码错误';
     if (/User already registered|already been registered/i.test(message)) return '该邮箱已注册，请直接登录';
-    if (/Email not confirmed/i.test(message)) return '邮箱尚未验证，请先完成验证码验证';
+    if (/Email not confirmed/i.test(message)) return '邮箱尚未确认，请先在邮箱中完成确认';
     if (/captcha/i.test(message)) return '人机验证未通过，请刷新页面后重试';
-    if (/invalid.*(token|otp)|token has expired|otp.*expired|invalid.*code/i.test(message)) return '验证码错误或已过期';
-    if (/Email address not authorized/i.test(message)) return '验证码发送失败：Supabase 自带邮件服务只能发送到项目成员邮箱，请先配置自定义 SMTP';
-    if (/Error sending confirmation email/i.test(message)) return '验证码发送失败，请检查 Supabase 的 SMTP 配置';
-    if (/over_email_send_rate_limit|email.*rate limit/i.test(message)) return '验证码发送过于频繁，请稍后再试';
+    if (/should be different from the old password/i.test(message)) return '新密码不能与旧密码相同';
+    if (/Auth session missing|session.*not found/i.test(message)) return '重置链接已失效，请重新发起找回密码';
+    if (/Email address not authorized/i.test(message)) return '邮件发送失败：Supabase 自带邮件服务只能发送到项目成员邮箱';
+    if (/Error sending|sending.*email/i.test(message)) return '邮件发送失败，请检查 Supabase 的邮件配置';
+    if (/over_email_send_rate_limit|email.*rate limit/i.test(message)) return '邮件发送过于频繁，请稍后再试';
     if (/Password should be at least/i.test(message)) return '密码至少 6 位';
     if (/valid email/i.test(message)) return '邮箱格式不正确';
     if (/rate limit|too many requests/i.test(message)) return '操作过于频繁，请稍后再试';
@@ -125,14 +126,9 @@ export const api = {
 
         if (error) fail(translateAuthError(error), 400);
 
-        // 已注册的邮箱不会报错，而是返回一个 identities 为空的混淆用户（用于防止账号枚举）
-        if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
-            fail('该邮箱已注册，请直接登录', 400);
-        }
-
-        // 开启了邮箱验证时不会返回会话，需要用户输入邮件里的 6 位验证码
+        // 若开启了「Confirm email」，此处不会返回会话，需要用户先去邮箱确认
         if (!data.session) {
-            return { pending: true, email };
+            fail('注册成功，但需要先在邮箱中完成确认才能登录', 400);
         }
 
         const user = await buildUser(data.user);
@@ -153,26 +149,25 @@ export const api = {
         return { user };
     },
 
-    // 校验注册邮件里的验证码；signup / magiclink 类型已废弃，统一用 email
-    async verifyEmailCode({ email, token }) {
-        const { data, error } = await supabase.auth.verifyOtp({ email, token, type: 'email' });
-        if (error) fail(translateAuthError(error), 400);
-
-        const user = await buildUser(data.user);
-        store.setUser(user);
-        return { user };
-    },
-
-    // 重新发送注册验证码；resend 的类型是 signup，和 verifyOtp 不一样
-    async resendVerifyEmail({ email, captchaToken }) {
-        const { error } = await supabase.auth.resend({
-            type: 'signup',
-            email,
-            options: { captchaToken }
-        });
-
+    // 发送密码重置邮件；链接地址取自 Supabase 的 SITE_URL 配置
+    async forgotPassword({ email, captchaToken }) {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, { captchaToken });
         if (error) fail(translateAuthError(error), 400);
         return {};
+    },
+
+    // 用户点击邮件里的重置链接后，会带着恢复会话回到本站，此时才能改密码
+    async updatePassword(password) {
+        const { error } = await supabase.auth.updateUser({ password });
+        if (error) fail(translateAuthError(error), 400);
+        return {};
+    },
+
+    // 监听「通过重置链接进入」这一事件
+    onPasswordRecovery(handler) {
+        supabase.auth.onAuthStateChange(event => {
+            if (event === 'PASSWORD_RECOVERY') handler();
+        });
     },
 
     async logout() {
