@@ -23,25 +23,24 @@ $$('.tab').forEach(tab => {
     tab.addEventListener('click', () => switchTab(tab.dataset.tab));
 });
 
-function enterApp(session) {
-    store.setToken(session.token);
-    store.setUser(session.user);
+function enterApp() {
     location.href = PAGES.dashboard;
 }
 
 loginForm.addEventListener('submit', async e => {
     e.preventDefault();
-    const username = $('#loginUsername').value.trim();
+    const email = $('#loginEmail').value.trim();
     const password = $('#loginPassword').value;
 
-    if (!username || !password) {
-        return showFormMessage(loginMessage, '请填写用户名和密码');
+    if (!email || !password) {
+        return showFormMessage(loginMessage, '请填写邮箱和密码');
     }
 
     const button = $('button[type=submit]', loginForm);
     setLoading(button, true);
     try {
-        enterApp(await api.login({ username, password }));
+        await api.login({ email, password });
+        enterApp();
     } catch (err) {
         showFormMessage(loginMessage, err.message);
     } finally {
@@ -51,13 +50,19 @@ loginForm.addEventListener('submit', async e => {
 
 registerForm.addEventListener('submit', async e => {
     e.preventDefault();
-    const username = $('#regUsername').value.trim();
+    const email = $('#regEmail').value.trim();
     const nickname = $('#regNickname').value.trim();
     const password = $('#regPassword').value;
     const passwordConfirm = $('#regPasswordConfirm').value;
 
-    if (!username) {
-        return showFormMessage(registerMessage, '用户名不能为空');
+    if (!email) {
+        return showFormMessage(registerMessage, '邮箱不能为空');
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return showFormMessage(registerMessage, '邮箱格式不正确');
+    }
+    if (password.length < 6) {
+        return showFormMessage(registerMessage, '密码至少 6 位');
     }
     if (password !== passwordConfirm) {
         return showFormMessage(registerMessage, '两次密码输入不一致');
@@ -66,7 +71,14 @@ registerForm.addEventListener('submit', async e => {
     const button = $('button[type=submit]', registerForm);
     setLoading(button, true);
     try {
-        enterApp(await api.register({ username, nickname, password }));
+        const result = await api.register({ email, nickname, password });
+        // 开启了邮箱验证时，注册后需要先去邮箱确认
+        if (result && result.pending) {
+            switchTab('login');
+            showFormMessage(loginMessage, result.message, 'success');
+            return;
+        }
+        enterApp();
     } catch (err) {
         showFormMessage(registerMessage, err.message);
     } finally {

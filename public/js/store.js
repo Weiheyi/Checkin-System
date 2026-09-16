@@ -1,4 +1,3 @@
-const TOKEN_KEY = 'checkin_token';
 const USER_KEY = 'checkin_user';
 
 function readUser() {
@@ -9,22 +8,16 @@ function readUser() {
     }
 }
 
+// 仅作界面用的登录态缓存；真正的会话由 Supabase SDK 自行持久化
 export const store = {
-    getToken() {
-        return localStorage.getItem(TOKEN_KEY);
-    },
-    setToken(token) {
-        localStorage.setItem(TOKEN_KEY, token);
-    },
     getUser: readUser,
     setUser(user) {
         localStorage.setItem(USER_KEY, JSON.stringify(user));
     },
     isLoggedIn() {
-        return !!localStorage.getItem(TOKEN_KEY);
+        return !!readUser();
     },
     clear() {
-        localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem(USER_KEY);
     }
 };

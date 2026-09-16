@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>登录 - 学习打卡系统</title>
-    <link rel="stylesheet" href="/css/style.css">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="stylesheet" href="css/style.css">
 </head>
 <body class="auth-body">
     <div class="auth-container">
@@ -22,8 +23,8 @@
 
             <form id="loginForm" class="auth-form">
                 <div class="form-group">
-                    <label for="loginUsername">用户名</label>
-                    <input type="text" id="loginUsername" autocomplete="username" required placeholder="请输入用户名">
+                    <label for="loginEmail">邮箱</label>
+                    <input type="email" id="loginEmail" autocomplete="email" required placeholder="请输入邮箱">
                 </div>
                 <div class="form-group">
                     <label for="loginPassword">密码</label>
@@ -35,8 +36,8 @@
 
             <form id="registerForm" class="auth-form hidden">
                 <div class="form-group">
-                    <label for="regUsername">用户名</label>
-                    <input type="text" id="regUsername" autocomplete="username" required placeholder="请输入用户名">
+                    <label for="regEmail">邮箱</label>
+                    <input type="email" id="regEmail" autocomplete="email" required placeholder="请输入邮箱">
                 </div>
                 <div class="form-group">
                     <label for="regNickname">昵称</label>
@@ -44,7 +45,7 @@
                 </div>
                 <div class="form-group">
                     <label for="regPassword">密码</label>
-                    <input type="password" id="regPassword" autocomplete="new-password" required placeholder="请输入密码">
+                    <input type="password" id="regPassword" autocomplete="new-password" required placeholder="请输入密码（至少 6 位）">
                 </div>
                 <div class="form-group">
                     <label for="regPasswordConfirm">确认密码</label>
@@ -56,6 +57,7 @@
         </div>
     </div>
 
-    <script type="module" src="/js/auth.js"></script>
+    <script src="vendor/supabase.js"></script>
+    <script type="module" src="js/auth.js"></script>
 </body>
 </html>

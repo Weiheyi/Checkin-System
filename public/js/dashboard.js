@@ -27,8 +27,8 @@ function cacheElements() {
 }
 
 function renderUser(user) {
-    els.userName.textContent = user.nickname || user.username;
-    els.userAvatar.textContent = (user.nickname || user.username || '学').charAt(0);
+    els.userName.textContent = user.nickname || user.email;
+    els.userAvatar.textContent = (user.nickname || user.email || '学').charAt(0);
 }
 
 function renderCheckinState() {
@@ -205,9 +205,13 @@ async function deleteTask(task) {
     }
 }
 
-function logout() {
-    store.clear();
-    location.replace(PAGES.login);
+async function logout() {
+    try {
+        await api.logout();
+    } finally {
+        store.clear();
+        location.replace(PAGES.login);
+    }
 }
 
 async function init() {
