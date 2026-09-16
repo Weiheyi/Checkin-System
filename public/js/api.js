@@ -98,8 +98,13 @@ function computeStreak(dates) {
 function translateAuthError(error) {
     const message = (error && error.message) || '操作失败';
     if (/Invalid login credentials/i.test(message)) return '邮箱或密码错误';
-    if (/User already registered|already been registered/i.test(message)) return '该邮箱已被注册';
-    if (/Email not confirmed/i.test(message)) return '邮箱尚未确认，请先到邮箱点击确认链接';
+    if (/User already registered|already been registered/i.test(message)) return '该邮箱已注册，请直接登录';
+    if (/Email not confirmed/i.test(message)) return '邮箱尚未验证，请先完成验证码验证';
+    if (/captcha/i.test(message)) return '人机验证未通过，请刷新页面后重试';
+    if (/invalid.*(token|otp)|token has expired|otp.*expired|invalid.*code/i.test(message)) return '验证码错误或已过期';
+    if (/Email address not authorized/i.test(message)) return '验证码发送失败：Supabase 自带邮件服务只能发送到项目成员邮箱，请先配置自定义 SMTP';
+    if (/Error sending confirmation email/i.test(message)) return '验证码发送失败，请检查 Supabase 的 SMTP 配置';
+    if (/over_email_send_rate_limit|email.*rate limit/i.test(message)) return '验证码发送过于频繁，请稍后再试';
     if (/Password should be at least/i.test(message)) return '密码至少 6 位';
     if (/valid email/i.test(message)) return '邮箱格式不正确';
     if (/rate limit|too many requests/i.test(message)) return '操作过于频繁，请稍后再试';
@@ -108,21 +113,26 @@ function translateAuthError(error) {
 }
 
 export const api = {
-    async register({ email, nickname, password }) {
+    async register({ email, nickname, password, captchaToken }) {
         const { data, error } = await supabase.auth.signUp({
             email,
             password,
-            options: { data: { nickname: nickname || email.split('@')[0] } }
+            options: {
+                data: { nickname: nickname || email.split('@')[0] },
+                captchaToken
+            }
         });
 
         if (error) fail(translateAuthError(error), 400);
 
-        // 开启了邮箱验证时不会返回会话，此时提示用户先去邮箱确认
+        // 已注册的邮箱不会报错，而是返回一个 identities 为空的混淆用户（用于防止账号枚举）
+        if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+            fail('该邮箱已注册，请直接登录', 400);
+        }
+
+        // 开启了邮箱验证时不会返回会话，需要用户输入邮件里的 6 位验证码
         if (!data.session) {
-            return {
-                pending: true,
-                message: '注册成功！请先到邮箱点击确认链接，然后回来登录'
-            };
+            return { pending: true, email };
         }
 
         const user = await buildUser(data.user);
@@ -130,13 +140,39 @@ export const api = {
         return { user };
     },
 
-    async login({ email, password }) {
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    async login({ email, password, captchaToken }) {
+        const { data, error } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+            options: { captchaToken }
+        });
         if (error) fail(translateAuthError(error), 400);
 
         const user = await buildUser(data.user);
         store.setUser(user);
         return { user };
+    },
+
+    // 校验注册邮件里的验证码；signup / magiclink 类型已废弃，统一用 email
+    async verifyEmailCode({ email, token }) {
+        const { data, error } = await supabase.auth.verifyOtp({ email, token, type: 'email' });
+        if (error) fail(translateAuthError(error), 400);
+
+        const user = await buildUser(data.user);
+        store.setUser(user);
+        return { user };
+    },
+
+    // 重新发送注册验证码；resend 的类型是 signup，和 verifyOtp 不一样
+    async resendVerifyEmail({ email, captchaToken }) {
+        const { error } = await supabase.auth.resend({
+            type: 'signup',
+            email,
+            options: { captchaToken }
+        });
+
+        if (error) fail(translateAuthError(error), 400);
+        return {};
     },
 
     async logout() {

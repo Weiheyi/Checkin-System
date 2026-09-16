@@ -720,6 +720,106 @@ button {
     }
 }
 
+/* ========== 人机验证与邮箱验证码 ========== */
+.captcha-box {
+    display: flex;
+    justify-content: center;
+}
+
+/* 未渲染组件时（例如还没配置 Site Key）不占位 */
+.captcha-box:empty {
+    display: none;
+}
+
+.btn-outline {
+    padding: 12px;
+    background: transparent;
+    color: var(--color-primary);
+    border: 2px solid var(--color-primary);
+    border-radius: var(--radius-sm);
+    font-size: 15px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.btn-outline:hover:not(:disabled) {
+    background: var(--color-primary-soft);
+}
+
+.btn-outline:disabled {
+    color: var(--text-faint);
+    border-color: var(--border-strong);
+    cursor: not-allowed;
+}
+
+.link-btn {
+    padding: 0;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 14px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: color var(--transition);
+}
+
+.link-btn:hover {
+    color: var(--color-primary);
+    text-decoration: underline;
+}
+
+.verify-header {
+    text-align: center;
+}
+
+.verify-icon {
+    display: block;
+    font-size: 34px;
+    margin-bottom: var(--space-2);
+}
+
+.verify-hint {
+    color: var(--text-muted);
+    font-size: 14px;
+}
+
+.verify-email {
+    margin-top: 2px;
+    color: var(--text-strong);
+    font-size: 15px;
+    font-weight: 600;
+    word-break: break-all;
+}
+
+.verify-sub {
+    margin-top: var(--space-1);
+    color: var(--text-faint);
+    font-size: 13px;
+}
+
+/* 6 位验证码输入框，覆盖 .form-group input 的默认样式 */
+.form-group .code-input {
+    padding: 14px;
+    border: 2px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: 10px;
+    text-align: center;
+}
+
+.form-group .code-input::placeholder {
+    color: var(--border-strong);
+    letter-spacing: 10px;
+}
+
+.form-group .code-input:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 4px rgba(90, 103, 216, 0.12);
+}
+
 @media (prefers-reduced-motion: reduce) {
     *,
     *::before,

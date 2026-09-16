@@ -6,6 +6,7 @@
     <title>登录 - 学习打卡系统</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="stylesheet" href="css/style.css">
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 </head>
 <body class="auth-body">
     <div class="auth-container">
@@ -16,7 +17,7 @@
                 <p class="auth-subtitle">记录每一天的坚持</p>
             </div>
 
-            <div class="tabs" role="tablist">
+            <div class="tabs" role="tablist" id="tabsBar">
                 <button class="tab active" data-tab="login" role="tab" aria-selected="true">登录</button>
                 <button class="tab" data-tab="register" role="tab" aria-selected="false">注册</button>
             </div>
@@ -30,6 +31,7 @@
                     <label for="loginPassword">密码</label>
                     <input type="password" id="loginPassword" autocomplete="current-password" required placeholder="请输入密码">
                 </div>
+                <div class="captcha-box" id="loginCaptcha"></div>
                 <button type="submit" class="btn-primary">登录</button>
                 <div id="loginMessage" class="form-message" role="alert"></div>
             </form>
@@ -51,9 +53,29 @@
                     <label for="regPasswordConfirm">确认密码</label>
                     <input type="password" id="regPasswordConfirm" autocomplete="new-password" required placeholder="请再次输入密码">
                 </div>
+                <div class="captcha-box" id="regCaptcha"></div>
                 <button type="submit" class="btn-primary">注册</button>
                 <div id="registerMessage" class="form-message" role="alert"></div>
             </form>
+
+            <div id="verifyPanel" class="auth-form hidden">
+                <div class="verify-header">
+                    <span class="verify-icon">📧</span>
+                    <p class="verify-hint">验证码已发送至</p>
+                    <p class="verify-email" id="verifyEmail"></p>
+                    <p class="verify-sub">请查收邮件并输入 6 位验证码</p>
+                </div>
+                <div class="form-group">
+                    <label for="verifyCode">验证码</label>
+                    <input type="text" id="verifyCode" class="code-input" inputmode="numeric"
+                           autocomplete="one-time-code" maxlength="6" placeholder="000000">
+                </div>
+                <button type="button" id="verifyBtn" class="btn-primary">验证并登录</button>
+                <div class="captcha-box" id="verifyCaptcha"></div>
+                <button type="button" id="resendBtn" class="btn-outline">重新发送验证码</button>
+                <button type="button" id="backToLogin" class="link-btn">返回登录</button>
+                <div id="verifyMessage" class="form-message" role="alert"></div>
+            </div>
         </div>
     </div>
 

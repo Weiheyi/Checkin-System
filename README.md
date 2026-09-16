@@ -48,22 +48,63 @@
 1. 到 https://supabase.com 注册并新建一个免费 Project
 2. 打开 **SQL Editor**，把 `supabase/schema.sql` 的内容整段粘贴执行
 
-### 2. 关闭邮箱验证（可选，但建议）
+### 2. 配置自定义 SMTP（必须）
 
-**Authentication → Providers → Email** → 关闭 **Confirm email**。
+Supabase 自带的邮件服务只能发送到**项目团队成员**的邮箱，且限流为**每小时 2 封**，
+正式使用会报 `Email address not authorized`，因此必须配置自定义 SMTP。
 
-关闭后注册即可直接登录；不关闭的话，注册后需要先去邮箱点确认链接，前端会给出对应提示。
+推荐 **Brevo**（免费 300 封/天，无需自有域名）或 **Resend**（需已验证域名）。
 
-### 3. 填写配置
+拿到 SMTP 主机、端口、用户名、密码后，到
+https://supabase.com/dashboard/project/_/auth/smtp 填入，并设置发件人地址与名称。
 
-**Project Settings → API** 里复制两样东西，填进 `public/js/config.js`：
+### 3. 开启邮箱验证并改为验证码模板
+
+1. **Authentication → Sign In / Providers → Email** → **打开 Confirm email**
+2. **Authentication → Email Templates → Confirm sign up**，改成：
+
+主题：
+
+```
+{{ .Token }} 是你的验证码
+```
+
+正文：
+
+```html
+<h2>验证你的邮箱</h2>
+<p>你正在注册「学习打卡系统」，验证码如下：</p>
+<p style="font-size:32px;font-weight:bold;letter-spacing:6px;">{{ .Token }}</p>
+<p>验证码 24 小时内有效，请勿转发给他人。</p>
+```
+
+> `{{ .Token }}` 就是 6 位验证码。用验证码替代确认链接，可以避开部分邮箱
+> （如 Microsoft Defender Safe Links）预取链接导致 token 提前失效的问题。
+
+### 4. 配置人机验证（Cloudflare Turnstile）
+
+1. 到 https://dash.cloudflare.com/?to=/:account/turnstile 新建 widget，
+   Hostnames 填入 `weiheyi.github.io` 与 `localhost`
+2. 复制 **Site Key**，填进 `public/js/config.js` 的 `TURNSTILE_SITE_KEY`
+3. 复制 **Secret Key**，填到 Supabase 的
+   **Authentication → Settings → Bot and Abuse Protection → Enable CAPTCHA protection**，
+   供应商选 Turnstile，粘贴 Secret Key 后保存
+
+> 开启后 Supabase 的**所有** Auth 请求（包括登录）都必须携带人机验证 token，
+> 因此登录表单也会出现验证组件，这是 Supabase 的设计。
+
+### 5. 填写前端配置
+
+**Project Settings → API** 里复制两样东西，连同 Turnstile 的 Site Key 一起填进 `public/js/config.js`：
 
 ```js
 export const SUPABASE_URL = 'https://xxxxx.supabase.co';
 export const SUPABASE_ANON_KEY = 'eyJ...';
+export const TURNSTILE_SITE_KEY = '你的 Turnstile Site Key';
 ```
 
-> `anon key` 设计上就是可以公开的，安全性由数据库的 RLS 策略保证。
+> `anon key` 与 Turnstile `Site Key` 设计上都是可以公开的，
+> 安全性分别由数据库的 RLS 策略和 Supabase 侧的 Secret Key 保证。
 > 请务必确认 `schema.sql` 里的 RLS 语句全部执行成功。
 
 ## 本地预览
