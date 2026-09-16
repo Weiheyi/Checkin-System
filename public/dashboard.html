@@ -1,68 +1,76 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>打卡主页</title>
-    <link rel="stylesheet" href="style.css">
+    <title>打卡主页 - 学习打卡系统</title>
+    <link rel="stylesheet" href="/css/style.css">
 </head>
-
-<body>
+<body class="app-body">
     <div class="container">
-        <header>
-            <h1>📚 学习打卡系统</h1>
+        <header class="app-header">
+            <div class="brand">
+                <span class="brand-icon">📚</span>
+                <h1>学习打卡系统</h1>
+            </div>
             <div class="user-info">
-                <span id="userName">用户</span>
-                <button onclick="logout()" class="btn-secondary">退出登录</button>
+                <div class="avatar" id="userAvatar" aria-hidden="true">学</div>
+                <div class="user-meta">
+                    <span class="user-name" id="userName">用户</span>
+                    <span class="user-sub" id="streakText">今天开始你的打卡</span>
+                </div>
+                <button id="logoutBtn" class="btn-ghost">退出</button>
             </div>
         </header>
-        <div class="date" id="currentDate"></div>
-        <button class="check-in-btn" id="checkInBtn">
-            ✅ 今日打卡
-        </button>
-        <div class="task-section" id="taskSection" style="display: none;">
-            <div class="task-input-wrapper">
-                <input type="text" class="task-input" id="taskInput" placeholder="输入今天的学习任务...">
-                <button class="add-task-btn" id="addTaskBtn">添加</button>
-            </div>
 
+        <section class="card hero">
+            <div class="date" id="currentDate"></div>
+            <button class="check-in-btn" id="checkInBtn" type="button">今日打卡</button>
+        </section>
+
+        <section class="card" id="taskSection" hidden>
+            <h3 class="card-title">今日任务</h3>
+            <div class="task-input-wrapper">
+                <input type="text" class="task-input" id="taskInput" placeholder="输入今天的学习任务..." autocomplete="off">
+                <button class="add-task-btn" id="addTaskBtn" type="button">添加</button>
+            </div>
             <ul class="task-list" id="taskList"></ul>
-        </div>
-        <div class="stats">
-            <h3>📊 学习统计</h3>
+            <p class="empty-hint" id="taskEmpty">还没有任务，添加一个吧</p>
+        </section>
+
+        <section class="card">
+            <h3 class="card-title">📊 学习统计</h3>
             <div class="stats-grid">
                 <div class="stat-item">
+                    <div class="stat-icon">🔥</div>
+                    <div class="stat-number" id="streakDays">0</div>
+                    <div class="stat-label">连续天数</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-icon">📅</div>
                     <div class="stat-number" id="totalDays">0</div>
                     <div class="stat-label">打卡天数</div>
                 </div>
                 <div class="stat-item">
-                    <div class="stat-number" id="totalTasks">0</div>
+                    <div class="stat-icon">✅</div>
+                    <div class="stat-number" id="completedTasks">0</div>
                     <div class="stat-label">完成任务</div>
                 </div>
                 <div class="stat-item">
+                    <div class="stat-icon">📈</div>
                     <div class="stat-number" id="completionRate">0%</div>
                     <div class="stat-label">完成率</div>
                 </div>
             </div>
-        </div>
+        </section>
 
-        <!-- 排行榜模块 -->
-        <div class="stats rank-section">
-            <h3>🏆 打卡排行榜</h3>
-            <div id="rankList"></div>
-        </div>
-
-        <div class="history">
-            <h3>📅 打卡历史</h3>
-            <div id="historyList"></div>
-        </div>
+        <section class="card">
+            <h3 class="card-title">📅 打卡历史</h3>
+            <div class="history-list" id="historyList"></div>
+            <p class="empty-hint" id="historyEmpty">暂无打卡记录</p>
+        </section>
     </div>
-    <script src="app.js"></script>
-    <script>
-        checkAuth();
-        initDashboard();
-    </script>
-</body>
 
+    <script type="module" src="/js/dashboard.js"></script>
+</body>
 </html>
