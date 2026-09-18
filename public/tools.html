@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>学习工具 - 学习打卡系统</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="preconnect" href="https://dhemqusvocjcbfvopwcm.supabase.co" crossorigin>
+    <link rel="stylesheet" href="css/style.css">
+    <script>
+        (function () {
+            try {
+                var t = localStorage.getItem('checkin_theme') || 'system';
+                var dark = t === 'dark' || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+            } catch (e) {}
+        })();
+    </script>
+    <link rel="modulepreload" href="js/config.js">
+    <link rel="modulepreload" href="js/supabase.js">
+    <link rel="modulepreload" href="js/store.js">
+    <link rel="modulepreload" href="js/ui.js">
+    <link rel="modulepreload" href="js/theme.js">
+    <link rel="modulepreload" href="js/shell.js">
+    <link rel="modulepreload" href="js/api.js">
+</head>
+<body class="app-body">
+    <div class="container">
+        <div id="appShell"></div>
+
+        <div class="segmented" id="toolTabs" role="tablist" aria-label="工具切换">
+            <button type="button" data-tool="timer" class="active">⏱ 计时器</button>
+            <button type="button" data-tool="countdown">⏳ 倒计时</button>
+            <button type="button" data-tool="words">📖 背单词</button>
+        </div>
+
+        <!-- ========== 计时器 ========== -->
+        <section class="card tool-panel" id="panel-timer">
+            <div class="timer-display" id="timerDisplay">00:00:00</div>
+            <p class="timer-hint" id="timerHint">点「开始」开始计时</p>
+            <div class="timer-actions">
+                <button class="btn-primary" id="timerToggle" type="button">开始</button>
+                <button class="btn-ghost" id="timerReset" type="button">重置</button>
+                <button class="btn-ghost" id="timerLap" type="button">计次</button>
+            </div>
+            <ul class="lap-list" id="lapList"></ul>
+        </section>
+
+        <!-- ========== 倒计时 ========== -->
+        <section class="card tool-panel hidden" id="panel-countdown">
+            <div class="timer-display" id="countdownDisplay">25:00</div>
+            <p class="timer-hint" id="countdownHint">选择一个时长，或自定义分钟数</p>
+            <div class="preset-row" id="countdownPresets">
+                <button type="button" class="preset-chip" data-minutes="5">5 分钟</button>
+                <button type="button" class="preset-chip active" data-minutes="25">25 分钟</button>
+                <button type="button" class="preset-chip" data-minutes="45">45 分钟</button>
+                <button type="button" class="preset-chip" data-minutes="60">60 分钟</button>
+            </div>
+            <div class="task-input-wrapper">
+                <input type="number" class="task-input" id="countdownMinutes" min="1" max="600"
+                       inputmode="numeric" placeholder="自定义分钟数" aria-label="自定义分钟数">
+                <button class="add-task-btn" id="countdownApply" type="button">设定</button>
+            </div>
+            <div class="timer-actions">
+                <button class="btn-primary" id="countdownToggle" type="button">开始</button>
+                <button class="btn-ghost" id="countdownReset" type="button">重置</button>
+            </div>
+        </section>
+
+        <!-- ========== 背单词 ========== -->
+        <section class="card tool-panel hidden" id="panel-words">
+
+            <!-- 视图：单词本列表 -->
+            <div id="wordHome">
+                <div class="card-title-row">
+                    <h3 class="card-title">📖 我的单词本</h3>
+                    <button class="btn-ghost" id="newBookBtn" type="button">＋ 新建</button>
+                </div>
+                <div id="bookList"></div>
+                <p class="empty-hint" id="bookEmpty" hidden>还没有单词本，点「新建」粘贴一份单词表就能开始了</p>
+            </div>
+
+            <!-- 视图：新建 / 导入 -->
+            <div id="wordImport" hidden>
+                <div class="card-title-row">
+                    <h3 class="card-title">新建单词本</h3>
+                    <button class="btn-ghost" id="importCancel" type="button">返回</button>
+                </div>
+                <div class="form-group">
+                    <label for="bookName">单词本名称</label>
+                    <input type="text" id="bookName" maxlength="30" placeholder="例如：四级核心词汇">
+                </div>
+                <div class="form-group">
+                    <label for="bookText">粘贴单词表（每行一个）</label>
+                    <textarea id="bookText" class="word-textarea" spellcheck="false"
+                              placeholder="支持这些格式，会自动识别：&#10;apple 苹果&#10;apple,苹果&#10;apple - 苹果&#10;apple | 苹果&#10;apple：苹果&#10;apple    苹果（Tab 分隔）&#10;1. apple 苹果"></textarea>
+                </div>
+                <div class="import-bar">
+                    <span class="import-count" id="importCount">识别到 0 个单词</span>
+                    <button class="btn-ghost" id="swapToggle" type="button">交换中英</button>
+                    <button class="btn-ghost" id="previewToggle" type="button">预览</button>
+                </div>
+                <div class="word-preview" id="wordPreview" hidden></div>
+                <button class="btn-primary block-btn" id="importSave" type="button" disabled>保存单词本</button>
+            </div>
+
+            <!-- 视图：单词本详情 -->
+            <div id="wordDetail" hidden>
+                <div class="card-title-row">
+                    <h3 class="card-title" id="detailTitle">单词本</h3>
+                    <button class="btn-ghost" id="detailBack" type="button">返回</button>
+                </div>
+
+                <div class="word-stats" id="detailStats"></div>
+
+                <div class="segmented" id="detailTabs" role="tablist" aria-label="单词本内功能">
+                    <button type="button" data-view="study" class="active">背诵</button>
+                    <button type="button" data-view="quiz">考核</button>
+                    <button type="button" data-view="list">单词</button>
+                </div>
+
+                <!-- 背诵 -->
+                <div id="studyView">
+                    <div class="study-progress" id="studyProgress"></div>
+                    <div class="study-card" id="studyCard" role="button" tabindex="0">
+                        <div class="study-term" id="studyTerm">—</div>
+                        <div class="study-meaning" id="studyMeaning" hidden></div>
+                        <div class="study-tip" id="studyTip">点击卡片查看释义</div>
+                    </div>
+                    <div class="study-actions" id="studyActions" hidden>
+                        <button class="study-btn study-btn-again" data-mark="again" type="button">不认识</button>
+                        <button class="study-btn study-btn-vague" data-mark="vague" type="button">模糊</button>
+                        <button class="study-btn study-btn-known" data-mark="known" type="button">认识</button>
+                    </div>
+                    <div class="study-summary" id="studySummary" hidden></div>
+                    <div class="timer-actions" id="studyControls">
+                        <button class="btn-ghost" id="studyRestart" type="button">重新开始</button>
+                        <label class="check-inline">
+                            <input type="checkbox" id="studyShuffle">
+                            <span>随机顺序</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- 考核 -->
+                <div id="quizView" hidden>
+                    <div class="quiz-setup" id="quizSetup">
+                        <div class="setting-row">
+                            <div class="setting-label">题型</div>
+                            <div class="switch-group" id="quizTypeGroup">
+                                <button type="button" data-type="choice" class="active">选择</button>
+                                <button type="button" data-type="spell">拼写</button>
+                            </div>
+                        </div>
+                        <div class="setting-row">
+                            <div class="setting-label">方向</div>
+                            <div class="switch-group" id="quizDirGroup">
+                                <button type="button" data-dir="term" class="active">看词选义</button>
+                                <button type="button" data-dir="meaning">看义选词</button>
+                            </div>
+                        </div>
+                        <div class="setting-row">
+                            <div class="setting-label">题量</div>
+                            <div class="switch-group" id="quizSizeGroup">
+                                <button type="button" data-size="10" class="active">10 题</button>
+                                <button type="button" data-size="20">20 题</button>
+                                <button type="button" data-size="0">全部</button>
+                            </div>
+                        </div>
+                        <button class="btn-primary block-btn" id="quizStart" type="button">开始考核</button>
+                        <p class="setting-desc" id="quizSetupHint"></p>
+                    </div>
+
+                    <div class="quiz-run" id="quizRun" hidden>
+                        <div class="study-progress" id="quizProgress"></div>
+                        <div class="study-card quiz-card" id="quizCard">
+                            <div class="study-term" id="quizPrompt">—</div>
+                            <div class="study-tip" id="quizSub"></div>
+                        </div>
+                        <div class="quiz-options" id="quizOptions"></div>
+                        <div class="quiz-spell" id="quizSpell" hidden>
+                            <input type="text" class="task-input" id="quizInput" autocomplete="off"
+                                   autocapitalize="off" autocorrect="off" spellcheck="false"
+                                   placeholder="输入对应的单词后回车">
+                            <button class="add-task-btn" id="quizSubmit" type="button">提交</button>
+                        </div>
+                        <div class="quiz-feedback" id="quizFeedback" hidden></div>
+                        <button class="btn-primary block-btn" id="quizNext" type="button" hidden>下一题</button>
+                    </div>
+
+                    <div class="quiz-result" id="quizResult" hidden></div>
+                </div>
+
+                <!-- 单词列表 -->
+                <div id="listView" hidden>
+                    <div class="list-toolbar">
+                        <button class="btn-ghost" id="addWordsBtn" type="button">＋ 追加单词</button>
+                        <button class="btn-ghost" id="resetProgressBtn" type="button">重置进度</button>
+                        <button class="btn-ghost" id="deleteBookBtn" type="button">删除本子</button>
+                    </div>
+                    <ul class="word-list" id="wordList"></ul>
+                    <p class="empty-hint" id="wordEmpty" hidden>这个本子还没有单词</p>
+                </div>
+
+                <!-- 追加单词 -->
+                <div id="addWordsView" hidden>
+                    <div class="card-title-row">
+                        <h3 class="card-title">追加单词</h3>
+                        <button class="btn-ghost" id="addWordsCancel" type="button">返回</button>
+                    </div>
+                    <div class="form-group">
+                        <label for="addText">粘贴新的单词表</label>
+                        <textarea id="addText" class="word-textarea" spellcheck="false"
+                                  placeholder="格式与新建时相同，会自动识别并追加到本子末尾"></textarea>
+                    </div>
+                    <div class="import-bar">
+                        <span class="import-count" id="addCount">识别到 0 个单词</span>
+                        <button class="btn-ghost" id="addPreviewToggle" type="button">预览</button>
+                    </div>
+                    <div class="word-preview" id="addPreview" hidden></div>
+                    <button class="btn-primary block-btn" id="addSave" type="button" disabled>追加到单词本</button>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script src="vendor/supabase.js"></script>
+    <script type="module" src="js/tools.js"></script>
+</body>
+</html>

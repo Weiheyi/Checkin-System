@@ -12,6 +12,7 @@ export const TURNSTILE_SITE_KEY = '0x4AAAAAAE4HPhBov0KZAwSp';
 export const PAGES = {
     login: 'index.html',
     dashboard: 'dashboard.html',
+    tools: 'tools.html',
     friends: 'friends.html',
     profile: 'profile.html'
 };

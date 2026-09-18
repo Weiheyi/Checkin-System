@@ -4,9 +4,10 @@ import { api } from './api.js';
 import { resolvedTheme, setTheme } from './theme.js';
 import { paintAvatar } from './ui.js';
 
-// 三个应用页共用同一套导航，新增页面时只改这里
+// 应用页共用同一套导航，新增页面时只改这里
 const NAV = [
     { key: 'dashboard', label: '打卡', icon: '📅', href: PAGES.dashboard },
+    { key: 'tools', label: '工具', icon: '🧰', href: PAGES.tools },
     { key: 'friends', label: '好友', icon: '👥', href: PAGES.friends },
     { key: 'profile', label: '我的', icon: '🙂', href: PAGES.profile }
 ];

@@ -43,6 +43,30 @@ create table if not exists public.tasks (
   created_at timestamptz not null default now()
 );
 
+-- 单词本（工具页「背单词」用）
+create table if not exists public.wordbooks (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- 单词：term 为单词、meaning 为释义，其余字段记录背诵进度
+create table if not exists public.words (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  book_id uuid not null references public.wordbooks(id) on delete cascade,
+  term text not null,
+  meaning text not null default '',
+  mastery smallint not null default 0,
+  review_count int not null default 0,
+  correct_count int not null default 0,
+  wrong_count int not null default 0,
+  last_reviewed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
 -- ============================================================
 -- 二、好友与点赞
 -- ============================================================
@@ -71,6 +95,9 @@ create index if not exists checkins_user_date_desc_idx on public.checkins(user_i
 create index if not exists friendships_user_a_idx      on public.friendships(user_a);
 create index if not exists friendships_user_b_idx      on public.friendships(user_b);
 create index if not exists checkin_likes_checkin_idx   on public.checkin_likes(checkin_id);
+create index if not exists wordbooks_user_idx          on public.wordbooks(user_id);
+create index if not exists words_book_idx              on public.words(book_id);
+create index if not exists words_user_idx              on public.words(user_id);
 
 -- ============================================================
 -- 三、行级安全（RLS）：本人可读写，好友可读
@@ -100,6 +127,8 @@ alter table public.checkins      enable row level security;
 alter table public.tasks         enable row level security;
 alter table public.friendships   enable row level security;
 alter table public.checkin_likes enable row level security;
+alter table public.wordbooks     enable row level security;
+alter table public.words         enable row level security;
 
 -- profiles：本人可读写，好友可读
 drop policy if exists "profiles: own"          on public.profiles;
@@ -140,6 +169,13 @@ create policy "likes: read visible" on public.checkin_likes for select using (au
 create policy "likes: insert own"   on public.checkin_likes for insert with check (auth.uid() = user_id and public.can_view_checkin(checkin_id));
 create policy "likes: delete own"   on public.checkin_likes for delete using (auth.uid() = user_id);
 
+-- wordbooks / words：纯个人数据，仅本人可读写（不开放给好友）
+drop policy if exists "wordbooks: own all" on public.wordbooks;
+create policy "wordbooks: own all" on public.wordbooks for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "words: own all" on public.words;
+create policy "words: own all" on public.words for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
 -- ============================================================
 -- 四、触发器
 -- ============================================================
@@ -170,6 +206,11 @@ begin new.updated_at = now(); return new; end; $$;
 drop trigger if exists profiles_touch on public.profiles;
 create trigger profiles_touch
   before update on public.profiles
+  for each row execute function public.touch_updated_at();
+
+drop trigger if exists wordbooks_touch on public.wordbooks;
+create trigger wordbooks_touch
+  before update on public.wordbooks
   for each row execute function public.touch_updated_at();
 
 -- ============================================================

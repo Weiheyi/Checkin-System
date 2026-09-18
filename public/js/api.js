@@ -72,6 +72,30 @@ function mapTask(row) {
     };
 }
 
+function mapWord(row) {
+    return {
+        id: row.id,
+        book_id: row.book_id,
+        term: row.term,
+        meaning: row.meaning || '',
+        mastery: row.mastery || 0,
+        review_count: row.review_count || 0,
+        correct_count: row.correct_count || 0,
+        wrong_count: row.wrong_count || 0,
+        last_reviewed_at: row.last_reviewed_at || null
+    };
+}
+
+function mapBook(row) {
+    const embedded = row.words && row.words[0];
+    return {
+        id: row.id,
+        name: row.name,
+        created_at: row.created_at,
+        wordCount: embedded ? Number(embedded.count) : 0
+    };
+}
+
 async function getTodayCheckin(userId) {
     const { data, error } = await supabase
         .from('checkins')
@@ -379,5 +403,143 @@ export const api = {
             if (error) fail(error.message, 500);
             return {};
         }
+    },
+
+    wordbooks: {
+        // 列表带上每个本子的单词数，避免为计数再发 N 次请求
+        async list() {
+            await requireUser();
+            const { data, error } = await supabase
+                .from('wordbooks')
+                .select('id, name, created_at, words(count)')
+                .order('created_at', { ascending: false });
+
+            if (error) fail(error.message, 500);
+            return (data || []).map(mapBook);
+        },
+
+        async detail(id) {
+            await requireUser();
+
+            const { data: book, error } = await supabase
+                .from('wordbooks')
+                .select('id, name, created_at')
+                .eq('id', id)
+                .maybeSingle();
+
+            if (error) fail(error.message, 500);
+            if (!book) fail('单词本不存在或已被删除', 404);
+
+            const { data: words, error: wordError } = await supabase
+                .from('words')
+                .select('*')
+                .eq('book_id', id)
+                .order('created_at', { ascending: true });
+
+            if (wordError) fail(wordError.message, 500);
+
+            const list = (words || []).map(mapWord);
+            return {
+                book: { id: book.id, name: book.name, created_at: book.created_at, wordCount: list.length },
+                words: list
+            };
+        },
+
+        async create({ name, words }) {
+            const user = await requireUser();
+
+            const { data: book, error } = await supabase
+                .from('wordbooks')
+                .insert({ user_id: user.id, name: name.trim() })
+                .select()
+                .single();
+
+            if (error) fail(error.message, 500);
+
+            const inserted = await insertWords(user.id, book.id, words);
+            return {
+                book: { id: book.id, name: book.name, created_at: book.created_at, wordCount: inserted.length },
+                words: inserted
+            };
+        },
+
+        async addWords(bookId, words) {
+            const user = await requireUser();
+            return { words: await insertWords(user.id, bookId, words) };
+        },
+
+        async rename(id, name) {
+            await requireUser();
+            const { data, error } = await supabase
+                .from('wordbooks')
+                .update({ name: name.trim() })
+                .eq('id', id)
+                .select('id, name, created_at')
+                .single();
+
+            if (error) fail(error.message, 500);
+            return { book: { id: data.id, name: data.name, created_at: data.created_at } };
+        },
+
+        async remove(id) {
+            await requireUser();
+            const { error } = await supabase.from('wordbooks').delete().eq('id', id);
+            if (error) fail(error.message, 500);
+            return {};
+        },
+
+        async removeWord(id) {
+            await requireUser();
+            const { error } = await supabase.from('words').delete().eq('id', id);
+            if (error) fail(error.message, 500);
+            return {};
+        },
+
+        // 背诵/考核后回写进度；调用方通常不 await，失败也不打断答题节奏
+        async saveProgress(id, { mastery, review_count, correct_count, wrong_count }) {
+            await requireUser();
+            const { error } = await supabase
+                .from('words')
+                .update({
+                    mastery,
+                    review_count,
+                    correct_count,
+                    wrong_count,
+                    last_reviewed_at: new Date().toISOString()
+                })
+                .eq('id', id);
+
+            if (error) fail(error.message, 500);
+            return {};
+        },
+
+        // 清空一本单词本的背诵进度
+        async resetProgress(bookId) {
+            await requireUser();
+            const { error } = await supabase
+                .from('words')
+                .update({ mastery: 0, review_count: 0, correct_count: 0, wrong_count: 0, last_reviewed_at: null })
+                .eq('book_id', bookId);
+
+            if (error) fail(error.message, 500);
+            return {};
+        }
     }
 };
+
+async function insertWords(userId, bookId, words) {
+    const rows = (words || [])
+        .filter(word => word && word.term)
+        .map(word => ({
+            user_id: userId,
+            book_id: bookId,
+            term: String(word.term).trim(),
+            meaning: String(word.meaning || '').trim()
+        }));
+
+    if (!rows.length) return [];
+
+    const { data, error } = await supabase.from('words').insert(rows).select();
+    if (error) fail(error.message, 500);
+    return (data || []).map(mapWord);
+}
