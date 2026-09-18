@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>好友 - 学习打卡系统</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="preconnect" href="https://dhemqusvocjcbfvopwcm.supabase.co" crossorigin>
+    <link rel="stylesheet" href="css/style.css">
+    <script>
+        (function () {
+            try {
+                var t = localStorage.getItem('checkin_theme') || 'system';
+                var dark = t === 'dark' || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+            } catch (e) {}
+        })();
+    </script>
+    <link rel="modulepreload" href="js/config.js">
+    <link rel="modulepreload" href="js/supabase.js">
+    <link rel="modulepreload" href="js/store.js">
+    <link rel="modulepreload" href="js/ui.js">
+    <link rel="modulepreload" href="js/theme.js">
+    <link rel="modulepreload" href="js/shell.js">
+    <link rel="modulepreload" href="js/api.js">
+</head>
+<body class="app-body">
+    <div class="container">
+        <div id="appShell"></div>
+
+        <section class="card">
+            <div class="segmented" id="segmented" role="tablist">
+                <button type="button" class="active" data-tab="feed" role="tab" aria-selected="true">动态</button>
+                <button type="button" data-tab="rank" role="tab" aria-selected="false">排行榜</button>
+                <button type="button" data-tab="friends" role="tab" aria-selected="false">好友</button>
+            </div>
+
+            <div id="panelFeed">
+                <div id="feedList"></div>
+            </div>
+
+            <div id="panelRank" hidden>
+                <div id="rankList"></div>
+            </div>
+
+            <div id="panelFriends" hidden>
+                <div class="add-friend">
+                    <input type="email" class="text-input" id="friendEmail" placeholder="输入好友邮箱精确添加" autocomplete="off">
+                    <button class="add-task-btn" id="addFriendBtn" type="button">添加</button>
+                </div>
+                <div id="friendList"></div>
+            </div>
+        </section>
+    </div>
+
+    <script src="vendor/supabase.js"></script>
+    <script type="module" src="js/friends.js"></script>
+</body>
+</html>

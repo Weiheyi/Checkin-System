@@ -6,24 +6,28 @@
     <title>打卡主页 - 学习打卡系统</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="preconnect" href="https://dhemqusvocjcbfvopwcm.supabase.co" crossorigin>
+    <link rel="dns-prefetch" href="https://challenges.cloudflare.com">
     <link rel="stylesheet" href="css/style.css">
+    <script>
+        (function () {
+            try {
+                var t = localStorage.getItem('checkin_theme') || 'system';
+                var dark = t === 'dark' || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+            } catch (e) {}
+        })();
+    </script>
+    <link rel="modulepreload" href="js/config.js">
+    <link rel="modulepreload" href="js/supabase.js">
+    <link rel="modulepreload" href="js/store.js">
+    <link rel="modulepreload" href="js/ui.js">
+    <link rel="modulepreload" href="js/theme.js">
+    <link rel="modulepreload" href="js/shell.js">
+    <link rel="modulepreload" href="js/api.js">
 </head>
 <body class="app-body">
     <div class="container">
-        <header class="app-header">
-            <div class="brand">
-                <span class="brand-icon">📚</span>
-                <h1>学习打卡系统</h1>
-            </div>
-            <div class="user-info">
-                <div class="avatar" id="userAvatar" aria-hidden="true">学</div>
-                <div class="user-meta">
-                    <span class="user-name" id="userName">用户</span>
-                    <span class="user-sub" id="streakText">今天开始你的打卡</span>
-                </div>
-                <button id="logoutBtn" class="btn-ghost">退出</button>
-            </div>
-        </header>
+        <div id="appShell"></div>
 
         <section class="card hero">
             <div class="date" id="currentDate"></div>
@@ -69,7 +73,7 @@
         <section class="card">
             <h3 class="card-title">📅 打卡历史</h3>
             <div class="history-list" id="historyList"></div>
-            <p class="empty-hint" id="historyEmpty">暂无打卡记录</p>
+            <p class="empty-hint" id="historyEmpty" hidden>暂无打卡记录</p>
         </section>
     </div>
 

@@ -1,15 +1,14 @@
 import { api } from './api.js';
 import { store } from './store.js';
-import { PAGES } from './config.js';
-import { $, toast, setLoading, formatDateZh } from './ui.js';
+import { $, toast, setLoading, formatDateZh, skeletonRows } from './ui.js';
+import { initShell, setShellUser, setShellSub } from './shell.js';
 
 const state = { checkin: null, tasks: [], stats: null, history: [] };
 const els = {};
+// 简单的在途锁，避免用户连点产生重复请求
+const busy = new Set();
 
 function cacheElements() {
-    els.userName = $('#userName');
-    els.userAvatar = $('#userAvatar');
-    els.streakText = $('#streakText');
     els.currentDate = $('#currentDate');
     els.checkInBtn = $('#checkInBtn');
     els.taskSection = $('#taskSection');
@@ -23,12 +22,6 @@ function cacheElements() {
     els.completionRate = $('#completionRate');
     els.historyList = $('#historyList');
     els.historyEmpty = $('#historyEmpty');
-    els.logoutBtn = $('#logoutBtn');
-}
-
-function renderUser(user) {
-    els.userName.textContent = user.nickname || user.email;
-    els.userAvatar.textContent = (user.nickname || user.email || '学').charAt(0);
 }
 
 function renderCheckinState() {
@@ -86,9 +79,7 @@ function renderStats() {
     els.streakDays.textContent = stats.streak;
     els.completedTasks.textContent = stats.completedTasks;
     els.completionRate.textContent = stats.completionRate + '%';
-    els.streakText.textContent = stats.streak > 0
-        ? `已连续打卡 ${stats.streak} 天`
-        : '今天开始你的打卡';
+    setShellSub(stats.streak > 0 ? `已连续打卡 ${stats.streak} 天` : '今天开始你的打卡');
 }
 
 function renderHistory() {
@@ -180,6 +171,8 @@ function applyTaskDelta(totalDelta, doneDelta) {
 }
 
 async function handleCheckIn() {
+    if (busy.has('checkin')) return;
+    busy.add('checkin');
     setLoading(els.checkInBtn, true);
     try {
         const { checkin } = await api.checkIn();
@@ -192,12 +185,14 @@ async function handleCheckIn() {
         toast(err.message, 'error');
         await loadToday();
     } finally {
+        busy.delete('checkin');
         setLoading(els.checkInBtn, false);
         renderCheckinState();
     }
 }
 
 async function addTask() {
+    if (busy.has('tasks')) return;
     const content = els.taskInput.value.trim();
     if (!content) {
         return toast('请输入任务内容', 'error');
@@ -206,6 +201,7 @@ async function addTask() {
         return toast('请先打卡', 'error');
     }
 
+    busy.add('tasks');
     setLoading(els.addTaskBtn, true);
     try {
         const { task } = await api.tasks.add(content);
@@ -216,11 +212,17 @@ async function addTask() {
     } catch (err) {
         toast(err.message, 'error');
     } finally {
+        busy.delete('tasks');
         setLoading(els.addTaskBtn, false);
     }
 }
 
 async function toggleTask(task) {
+    if (busy.has('tasks')) {
+        renderTasks();
+        return;
+    }
+    busy.add('tasks');
     const completed = !task.completed;
     try {
         const { task: updated } = await api.tasks.toggle(task.id, completed);
@@ -230,10 +232,14 @@ async function toggleTask(task) {
     } catch (err) {
         toast(err.message, 'error');
         renderTasks();
+    } finally {
+        busy.delete('tasks');
     }
 }
 
 async function deleteTask(task) {
+    if (busy.has('tasks')) return;
+    busy.add('tasks');
     try {
         await api.tasks.remove(task.id);
         state.tasks = state.tasks.filter(t => t.id !== task.id);
@@ -241,36 +247,27 @@ async function deleteTask(task) {
         applyTaskDelta(-1, task.completed ? -1 : 0);
     } catch (err) {
         toast(err.message, 'error');
-    }
-}
-
-async function logout() {
-    try {
-        await api.logout();
     } finally {
-        store.clear();
-        location.replace(PAGES.login);
+        busy.delete('tasks');
     }
 }
 
 async function init() {
-    if (!store.isLoggedIn()) {
-        return location.replace(PAGES.login);
-    }
-
     cacheElements();
     els.currentDate.textContent = formatDateZh();
-
-    // 本地有缓存就先渲染，省掉一次资料请求；会话是否有效由下面的数据请求验证
-    const cached = store.getUser();
-    if (cached) renderUser(cached);
+    els.historyList.replaceChildren(skeletonRows(3));
 
     els.checkInBtn.addEventListener('click', handleCheckIn);
     els.addTaskBtn.addEventListener('click', addTask);
     els.taskInput.addEventListener('keydown', e => {
         if (e.key === 'Enter') addTask();
     });
-    els.logoutBtn.addEventListener('click', logout);
+
+    // 老版本缓存里没有头像字段，补一次资料刷新即可
+    const cached = store.getUser();
+    if (cached && cached.avatar_emoji === undefined) {
+        api.me().then(({ user }) => setShellUser(user)).catch(() => {});
+    }
 
     try {
         await Promise.all([loadToday(), loadStats(), loadHistory()]);
@@ -279,4 +276,4 @@ async function init() {
     }
 }
 
-init();
+if (initShell({ active: 'dashboard' })) init();

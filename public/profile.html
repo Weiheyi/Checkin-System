@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>个人中心 - 学习打卡系统</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="preconnect" href="https://dhemqusvocjcbfvopwcm.supabase.co" crossorigin>
+    <link rel="stylesheet" href="css/style.css">
+    <script>
+        (function () {
+            try {
+                var t = localStorage.getItem('checkin_theme') || 'system';
+                var dark = t === 'dark' || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+            } catch (e) {}
+        })();
+    </script>
+    <link rel="modulepreload" href="js/config.js">
+    <link rel="modulepreload" href="js/supabase.js">
+    <link rel="modulepreload" href="js/store.js">
+    <link rel="modulepreload" href="js/ui.js">
+    <link rel="modulepreload" href="js/theme.js">
+    <link rel="modulepreload" href="js/shell.js">
+    <link rel="modulepreload" href="js/api.js">
+</head>
+<body class="app-body">
+    <div class="container">
+        <div id="appShell"></div>
+
+        <section class="card">
+            <div class="profile-head">
+                <div class="profile-avatar" id="profileAvatar">学</div>
+                <div class="profile-head-meta">
+                    <div class="profile-head-name" id="profileName">用户</div>
+                    <div class="profile-head-sub" id="profileEmail">—</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="card">
+            <h3 class="card-title">编辑资料</h3>
+            <form class="profile-form" id="profileForm">
+                <div class="form-group">
+                    <label>头像</label>
+                    <div class="avatar-picker" id="avatarPicker"></div>
+                </div>
+                <div class="form-group">
+                    <label for="nicknameInput">昵称</label>
+                    <input type="text" id="nicknameInput" maxlength="20" placeholder="请输入昵称">
+                </div>
+                <div class="form-group">
+                    <label for="bioInput">个性签名</label>
+                    <textarea id="bioInput" maxlength="60" placeholder="写点什么鼓励自己..."></textarea>
+                </div>
+                <button type="submit" class="btn-primary">保存资料</button>
+            </form>
+        </section>
+
+        <section class="card">
+            <h3 class="card-title">📊 我的数据</h3>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="stat-icon">🔥</div>
+                    <div class="stat-number" id="streakDays">0</div>
+                    <div class="stat-label">连续天数</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-icon">📅</div>
+                    <div class="stat-number" id="totalDays">0</div>
+                    <div class="stat-label">打卡天数</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-icon">✅</div>
+                    <div class="stat-number" id="completedTasks">0</div>
+                    <div class="stat-label">完成任务</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-icon">📈</div>
+                    <div class="stat-number" id="completionRate">0%</div>
+                    <div class="stat-label">完成率</div>
+                </div>
+            </div>
+            <p class="empty-hint" id="joinedText"></p>
+        </section>
+
+        <section class="card">
+            <h3 class="card-title">⚙️ 设置</h3>
+
+            <div class="setting-row">
+                <div>
+                    <div class="setting-label">主题外观</div>
+                    <div class="setting-desc">选择浅色、深色或跟随系统</div>
+                </div>
+                <div class="switch-group" id="themeGroup">
+                    <button type="button" data-theme="light">浅色</button>
+                    <button type="button" data-theme="dark">深色</button>
+                    <button type="button" data-theme="system">跟随系统</button>
+                </div>
+            </div>
+
+            <div class="setting-row">
+                <div>
+                    <div class="setting-label">修改密码</div>
+                    <div class="setting-desc">至少 6 位，修改后请用新密码登录</div>
+                </div>
+                <button type="button" class="btn-ghost" id="togglePasswordBtn">修改</button>
+            </div>
+
+            <form class="profile-form hidden" id="passwordForm">
+                <div class="form-group">
+                    <label for="newPassword">新密码</label>
+                    <input type="password" id="newPassword" autocomplete="new-password" placeholder="至少 6 位">
+                </div>
+                <div class="form-group">
+                    <label for="confirmPassword">确认新密码</label>
+                    <input type="password" id="confirmPassword" autocomplete="new-password" placeholder="再次输入新密码">
+                </div>
+                <button type="submit" class="btn-primary">保存新密码</button>
+            </form>
+
+            <div class="setting-row">
+                <div>
+                    <div class="setting-label">退出登录</div>
+                    <div class="setting-desc">退出后需要重新登录</div>
+                </div>
+                <button type="button" class="btn-ghost" id="logoutSetting">退出</button>
+            </div>
+        </section>
+    </div>
+
+    <script src="vendor/supabase.js"></script>
+    <script type="module" src="js/profile.js"></script>
+</body>
+</html>

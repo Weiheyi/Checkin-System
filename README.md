@@ -13,12 +13,15 @@
 - 任务管理：添加、勾选完成/取消、删除
 - 学习统计：连续天数、打卡天数、完成任务数、完成率
 - 打卡历史：最近记录与完成进度
+- 好友：邮箱精确添加 / 删除、好友打卡动态流、排行榜 PK、点赞鼓励
+- 个人中心：头像 / 昵称 / 签名、个人数据总览、修改密码
+- 界面：暗色模式（浅色 / 深色 / 跟随系统）、移动端底部导航
 
 ## 技术栈
 
 - 前端：原生 HTML / CSS / ES Modules，无构建步骤
 - 账号：Supabase Auth
-- 数据：Supabase Postgres，启用行级安全（RLS），每个用户只能读写自己的数据
+- 数据：Supabase Postgres，启用行级安全（RLS），本人可读写、好友可读
 - 托管：GitHub Pages（通过 GitHub Actions 发布 `public/`）
 
 ## 目录结构
@@ -30,6 +33,8 @@
 └── public/                        #  ← 只有这里会被发布
     ├── index.html                 # 登录 / 注册
     ├── dashboard.html             # 打卡主页
+    ├── friends.html               # 好友（动态 / 排行榜 / 好友列表）
+    ├── profile.html               # 个人中心
     ├── css/style.css
     ├── vendor/supabase.js         # 官方自包含的 supabase-js 构建
     └── js/
@@ -37,10 +42,14 @@
         ├── supabase.js            # 客户端初始化
         ├── api.js                 # 数据层（唯一与后端交互的地方）
         ├── store.js               # 登录态缓存
-        ├── ui.js                  # toast / 工具函数
+        ├── theme.js               # 主题（浅色 / 深色 / 跟随系统）
+        ├── shell.js               # 公共外壳：顶部栏 + 底部导航 + 登录守卫
+        ├── ui.js                  # toast / 骨架屏 / 确认弹窗 / 工具函数
         ├── math-captcha.js        # 四则运算人机验证（前端辅助校验）
         ├── auth.js                # 登录注册页逻辑
-        └── dashboard.js           # 主页逻辑
+        ├── dashboard.js           # 主页逻辑
+        ├── friends.js             # 好友页逻辑
+        └── profile.js             # 个人中心逻辑
 ```
 
 ## 配置（首次使用）
@@ -49,6 +58,9 @@
 
 1. 到 https://supabase.com 注册并新建一个免费 Project
 2. 打开 **SQL Editor**，把 `supabase/schema.sql` 的内容整段粘贴执行
+
+> `schema.sql` 已包含好友、点赞、个人中心所需的全部表、RLS 策略与 RPC 函数，
+> 且可重复执行。**如果项目是以前建的**，把最新的 `schema.sql` 再整段跑一次即可补上这些对象。
 
 ### 2. 关闭邮箱确认（必须）
 
@@ -106,6 +118,9 @@ npx serve public
 
 - Supabase 免费版项目闲置约一周会被暂停，需要到控制台手动唤醒
 - GitHub Pages 对公开仓库免费；仓库若转为私有，Pages 将不可用
+- 好友通过**邮箱精确匹配**添加，因此登录用户能判断某个邮箱是否已注册（这是该方式的固有代价）；
+  若在意隐私，可把 `add_friend_by_email` 换成「邀请码」方案
+- 好友之间的打卡与任务在数据库层面互相可读（RLS 的 `friends read` 策略），用于动态流与排行榜
 
 ### 关于「四则运算」验证
 

@@ -3,6 +3,7 @@ import { store } from './store.js';
 import { PAGES, TURNSTILE_SITE_KEY } from './config.js';
 import { $, $$, showFormMessage, setLoading } from './ui.js';
 import { createMathCaptcha } from './math-captcha.js';
+import './theme.js';
 
 const loginForm = $('#loginForm');
 const registerForm = $('#registerForm');

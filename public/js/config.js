@@ -11,5 +11,13 @@ export const TURNSTILE_SITE_KEY = '0x4AAAAAAE4HPhBov0KZAwSp';
 
 export const PAGES = {
     login: 'index.html',
-    dashboard: 'dashboard.html'
+    dashboard: 'dashboard.html',
+    friends: 'friends.html',
+    profile: 'profile.html'
 };
+
+// 主题偏好的 localStorage key；页面 <head> 里的内联脚本也用同一个字符串，改动时需同步
+export const THEME_KEY = 'checkin_theme';
+
+// 个人中心可选的预设头像
+export const AVATAR_CHOICES = ['📚', '🔥', '🌟', '🚀', '🎯', '🌱', '🧠', '💪', '☕', '🎨', '🎧', '🐱'];

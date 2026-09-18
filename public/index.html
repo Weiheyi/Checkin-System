@@ -7,6 +7,15 @@
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="preconnect" href="https://challenges.cloudflare.com">
     <link rel="preconnect" href="https://dhemqusvocjcbfvopwcm.supabase.co" crossorigin>
+    <script>
+        (function () {
+            try {
+                var t = localStorage.getItem('checkin_theme') || 'system';
+                var dark = t === 'dark' || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+            } catch (e) {}
+        })();
+    </script>
     <link rel="stylesheet" href="css/style.css">
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 </head>

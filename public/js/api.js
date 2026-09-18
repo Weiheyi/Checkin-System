@@ -37,14 +37,17 @@ async function requireUser() {
 async function buildUser(user) {
     const { data } = await supabase
         .from('profiles')
-        .select('nickname')
+        .select('nickname, avatar_emoji, bio, created_at')
         .eq('id', user.id)
         .maybeSingle();
 
     return {
         id: user.id,
         email: user.email,
-        nickname: (data && data.nickname) || (user.email || '').split('@')[0] || '用户'
+        nickname: (data && data.nickname) || (user.email || '').split('@')[0] || '用户',
+        avatar_emoji: (data && data.avatar_emoji) || '',
+        bio: (data && data.bio) || '',
+        joined_at: (data && data.created_at) || user.created_at || null
     };
 }
 
@@ -81,24 +84,6 @@ async function getTodayCheckin(userId) {
     return data;
 }
 
-// 连续天数只取决于最近这段日子，取最近 STREAK_WINDOW 天即可，
-// 免得打卡记录越积越多时把全部日期都拉回前端
-const STREAK_WINDOW = 400;
-
-function computeStreak(dates) {
-    const set = new Set(dates);
-    const cursor = new Date();
-    if (!set.has(todayStr(cursor))) {
-        cursor.setDate(cursor.getDate() - 1);
-    }
-    let streak = 0;
-    while (set.has(todayStr(cursor))) {
-        streak++;
-        cursor.setDate(cursor.getDate() - 1);
-    }
-    return streak;
-}
-
 function translateAuthError(error) {
     const message = (error && error.message) || '操作失败';
     if (/Invalid login credentials/i.test(message)) return '邮箱或密码错误';
@@ -108,7 +93,13 @@ function translateAuthError(error) {
     if (/valid email/i.test(message)) return '邮箱格式不正确';
     if (/rate limit|too many requests/i.test(message)) return '操作过于频繁，请稍后再试';
     if (/Failed to fetch|NetworkError|Load failed/i.test(message)) return '网络异常，请检查网络或 Supabase 配置';
-    return message;
+    // 数据库 RPC 里 raise exception 的中文提示，去掉 PostgREST 可能带上的前缀
+    return message.replace(/^[A-Z0-9]{5}:\s*/, '');
+}
+
+// 好友关系表按 user_a < user_b 存，统一算出顺序，保证两边对同一对好友得到同一行
+function orderedPair(idA, idB) {
+    return idA < idB ? [idA, idB] : [idB, idA];
 }
 
 export const api = {
@@ -195,29 +186,23 @@ export const api = {
         };
     },
 
+    // 统计全部在数据库一次算完，替代原来的 4 次 count 请求
     async stats() {
-        const user = await requireUser();
+        await requireUser();
 
-        const [days, allTasks, doneTasks, dates] = await Promise.all([
-            supabase.from('checkins').select('*', { count: 'exact', head: true }).eq('user_id', user.id),
-            supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('user_id', user.id),
-            supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('completed', true),
-            supabase.from('checkins')
-                .select('checkin_date')
-                .eq('user_id', user.id)
-                .order('checkin_date', { ascending: false })
-                .limit(STREAK_WINDOW)
-        ]);
+        const { data, error } = await supabase.rpc('my_stats');
+        if (error) fail(error.message, 500);
 
-        const totalTasks = allTasks.count || 0;
-        const completedTasks = doneTasks.count || 0;
+        const row = (data && data[0]) || {};
+        const totalTasks = row.total_tasks || 0;
+        const completedTasks = row.completed_tasks || 0;
 
         return {
-            totalDays: days.count || 0,
+            totalDays: row.total_days || 0,
             totalTasks,
             completedTasks,
             completionRate: totalTasks ? Math.round((completedTasks / totalTasks) * 100) : 0,
-            streak: computeStreak((dates.data || []).map(row => row.checkin_date))
+            streak: row.streak || 0
         };
     },
 
@@ -262,6 +247,101 @@ export const api = {
                 completedTaskCount: entry.done
             };
         });
+    },
+
+    profile: {
+        async update({ nickname, avatar_emoji, bio }) {
+            const user = await requireUser();
+
+            const patch = {};
+            if (nickname !== undefined) patch.nickname = nickname;
+            if (avatar_emoji !== undefined) patch.avatar_emoji = avatar_emoji;
+            if (bio !== undefined) patch.bio = bio;
+
+            const { data, error } = await supabase
+                .from('profiles')
+                .update(patch)
+                .eq('id', user.id)
+                .select()
+                .single();
+
+            if (error) fail(error.message, 500);
+
+            store.patchUser({
+                nickname: data.nickname,
+                avatar_emoji: data.avatar_emoji || '',
+                bio: data.bio || ''
+            });
+            return { profile: data };
+        },
+
+        async changePassword(password) {
+            const { error } = await supabase.auth.updateUser({ password });
+            if (error) fail(translateAuthError(error), 400);
+            return {};
+        }
+    },
+
+    friends: {
+        async addByEmail(email) {
+            await requireUser();
+            const { data, error } = await supabase.rpc('add_friend_by_email', { p_email: email });
+            if (error) fail(translateAuthError(error), 400);
+            return { friend: (data && data[0]) || null };
+        },
+
+        async remove(friendId) {
+            const user = await requireUser();
+            const [a, b] = orderedPair(user.id, friendId);
+
+            const { error } = await supabase
+                .from('friendships')
+                .delete()
+                .eq('user_a', a)
+                .eq('user_b', b);
+
+            if (error) fail(error.message, 500);
+            return {};
+        },
+
+        // 好友列表 + 排行榜数据，一次请求拿到
+        async overview() {
+            await requireUser();
+            const { data, error } = await supabase.rpc('friends_overview');
+            if (error) fail(error.message, 500);
+            return data || [];
+        },
+
+        // 好友动态流，一次请求拿到昵称/任务完成/点赞信息
+        async feed(limit = 20) {
+            await requireUser();
+            const { data, error } = await supabase.rpc('friend_feed', { p_limit: limit });
+            if (error) fail(error.message, 500);
+            return data || [];
+        }
+    },
+
+    likes: {
+        async toggle(checkinId, liked) {
+            const user = await requireUser();
+
+            if (liked) {
+                const { error } = await supabase
+                    .from('checkin_likes')
+                    .insert({ checkin_id: checkinId, user_id: user.id });
+                // 23505 = 主键冲突，说明已经赞过了，按成功处理
+                if (error && error.code !== '23505') fail(error.message, 500);
+            } else {
+                const { error } = await supabase
+                    .from('checkin_likes')
+                    .delete()
+                    .eq('checkin_id', checkinId)
+                    .eq('user_id', user.id);
+                if (error) fail(error.message, 500);
+            }
+
+            return {};
+        }
     },
 
     tasks: {
