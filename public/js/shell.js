@@ -87,8 +87,9 @@ export function mountShell({ active }) {
     host.querySelector('#shellLogout').addEventListener('click', logout);
     els.theme.addEventListener('click', () => {
         setTheme(resolvedTheme() === 'dark' ? 'light' : 'dark');
-        paintThemeButton();
     });
+    // 主题可能在别处被改（比如个人中心的设置），这里跟着同步图标
+    window.addEventListener('themechange', paintThemeButton);
 
     const cached = store.getUser();
     if (cached) setShellUser(cached);

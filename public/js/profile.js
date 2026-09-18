@@ -171,6 +171,9 @@ function bindEvents() {
         });
     });
 
+    // 顶部栏切换主题时，这里的选中状态也要跟着变
+    window.addEventListener('themechange', renderThemeGroup);
+
     els.togglePasswordBtn.addEventListener('click', () => {
         const hidden = els.passwordForm.classList.toggle('hidden');
         els.togglePasswordBtn.textContent = hidden ? '修改' : '取消';

@@ -16,6 +16,10 @@ export function resolvedTheme(theme = getTheme()) {
 
 export function applyTheme(theme = getTheme()) {
     document.documentElement.dataset.theme = resolvedTheme(theme);
+    // 通知界面各处（顶部栏图标、设置里的分段控件）同步刷新
+    window.dispatchEvent(new CustomEvent('themechange', {
+        detail: { theme: getTheme(), resolved: resolvedTheme(theme) }
+    }));
 }
 
 export function setTheme(theme) {
