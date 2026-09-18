@@ -166,12 +166,28 @@
                             </div>
                         </div>
                         <div class="setting-row">
+                            <div class="setting-label">范围</div>
+                            <div class="switch-group switch-wrap" id="quizScopeGroup">
+                                <button type="button" data-scope="all" class="active">全部</button>
+                                <button type="button" data-scope="new">未背</button>
+                                <button type="button" data-scope="known">认识</button>
+                                <button type="button" data-scope="vague">模糊</button>
+                                <button type="button" data-scope="again">不认识</button>
+                            </div>
+                        </div>
+                        <div class="setting-row">
                             <div class="setting-label">题量</div>
                             <div class="switch-group" id="quizSizeGroup">
-                                <button type="button" data-size="10" class="active">10 题</button>
-                                <button type="button" data-size="20">20 题</button>
+                                <button type="button" data-size="10" class="active">10</button>
+                                <button type="button" data-size="20">20</button>
+                                <button type="button" data-size="50">50</button>
                                 <button type="button" data-size="0">全部</button>
                             </div>
+                        </div>
+                        <div class="setting-row">
+                            <div class="setting-label">自定义题量</div>
+                            <input type="number" class="text-input quiz-size-input" id="quizSizeInput"
+                                   min="1" max="9999" inputmode="numeric" placeholder="留空按上方题量">
                         </div>
                         <button class="btn-primary block-btn" id="quizStart" type="button">开始考核</button>
                         <p class="setting-desc" id="quizSetupHint"></p>
@@ -203,6 +219,19 @@
                         <button class="btn-ghost" id="addWordsBtn" type="button">＋ 追加单词</button>
                         <button class="btn-ghost" id="resetProgressBtn" type="button">重置进度</button>
                         <button class="btn-ghost" id="deleteBookBtn" type="button">删除本子</button>
+                    </div>
+                    <div class="filter-row" id="wordFilter">
+                        <button type="button" data-filter="all" class="active">全部</button>
+                        <button type="button" data-filter="new">未背</button>
+                        <button type="button" data-filter="known">认识</button>
+                        <button type="button" data-filter="vague">模糊</button>
+                        <button type="button" data-filter="again">不认识</button>
+                    </div>
+                    <div class="select-bar">
+                        <span class="select-count" id="selectCount">已选 0 个</span>
+                        <button class="btn-ghost" id="selectAllBtn" type="button">全选当前</button>
+                        <button class="btn-ghost" id="selectClearBtn" type="button">清空</button>
+                        <button class="btn-inline" id="quizSelectedBtn" type="button" disabled>考核选中</button>
                     </div>
                     <ul class="word-list" id="wordList"></ul>
                     <p class="empty-hint" id="wordEmpty" hidden>这个本子还没有单词</p>

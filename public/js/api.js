@@ -82,6 +82,7 @@ function mapWord(row) {
         review_count: row.review_count || 0,
         correct_count: row.correct_count || 0,
         wrong_count: row.wrong_count || 0,
+        last_result: row.last_result || '',
         last_reviewed_at: row.last_reviewed_at || null
     };
 }
@@ -430,15 +431,7 @@ export const api = {
             if (error) fail(error.message, 500);
             if (!book) fail('单词本不存在或已被删除', 404);
 
-            const { data: words, error: wordError } = await supabase
-                .from('words')
-                .select('*')
-                .eq('book_id', id)
-                .order('created_at', { ascending: true });
-
-            if (wordError) fail(wordError.message, 500);
-
-            const list = (words || []).map(mapWord);
+            const list = await fetchAllWords(id);
             return {
                 book: { id: book.id, name: book.name, created_at: book.created_at, wordCount: list.length },
                 words: list
@@ -496,7 +489,7 @@ export const api = {
         },
 
         // 背诵/考核后回写进度；调用方通常不 await，失败也不打断答题节奏
-        async saveProgress(id, { mastery, review_count, correct_count, wrong_count }) {
+        async saveProgress(id, { mastery, review_count, correct_count, wrong_count, last_result }) {
             await requireUser();
             const { error } = await supabase
                 .from('words')
@@ -505,6 +498,7 @@ export const api = {
                     review_count,
                     correct_count,
                     wrong_count,
+                    last_result,
                     last_reviewed_at: new Date().toISOString()
                 })
                 .eq('id', id);
@@ -516,16 +510,60 @@ export const api = {
         // 清空一本单词本的背诵进度
         async resetProgress(bookId) {
             await requireUser();
-            const { error } = await supabase
-                .from('words')
-                .update({ mastery: 0, review_count: 0, correct_count: 0, wrong_count: 0, last_reviewed_at: null })
-                .eq('book_id', bookId);
 
-            if (error) fail(error.message, 500);
+            // 一次 update 同样受 1000 行上限影响，按 book_id 分批清
+            const ids = await fetchAllWords(bookId);
+            const CHUNK = 500;
+
+            for (let i = 0; i < ids.length; i += CHUNK) {
+                const slice = ids.slice(i, i + CHUNK).map(word => word.id);
+                const { error } = await supabase
+                    .from('words')
+                    .update({
+                        mastery: 0,
+                        review_count: 0,
+                        correct_count: 0,
+                        wrong_count: 0,
+                        last_result: null,
+                        last_reviewed_at: null
+                    })
+                    .in('id', slice);
+
+                if (error) fail(error.message, 500);
+            }
+
             return {};
         }
     }
 };
+
+// Supabase 默认单次最多返回 1000 行（Dashboard → Integrations → Data API → Max rows），
+// 单词本常有上千词，必须分页取，否则会被静默截断
+const WORDS_PAGE_SIZE = 1000;
+const WORDS_INSERT_CHUNK = 500;
+
+async function fetchAllWords(bookId) {
+    const all = [];
+
+    for (let from = 0; ; from += WORDS_PAGE_SIZE) {
+        const { data, error } = await supabase
+            .from('words')
+            .select('*')
+            .eq('book_id', bookId)
+            // 批量插入的 created_at 可能完全相同，必须再按 id 排序，分页才不会漏行或重复
+            .order('created_at', { ascending: true })
+            .order('id', { ascending: true })
+            .range(from, from + WORDS_PAGE_SIZE - 1);
+
+        if (error) fail(error.message, 500);
+
+        const rows = data || [];
+        all.push(...rows);
+        if (rows.length < WORDS_PAGE_SIZE) break;
+    }
+
+    return all.map(mapWord);
+}
 
 async function insertWords(userId, bookId, words) {
     const rows = (words || [])
@@ -537,9 +575,18 @@ async function insertWords(userId, bookId, words) {
             meaning: String(word.meaning || '').trim()
         }));
 
-    if (!rows.length) return [];
+    const inserted = [];
 
-    const { data, error } = await supabase.from('words').insert(rows).select();
-    if (error) fail(error.message, 500);
-    return (data || []).map(mapWord);
+    // 一次插入上千行容易超时，分批写
+    for (let i = 0; i < rows.length; i += WORDS_INSERT_CHUNK) {
+        const { data, error } = await supabase
+            .from('words')
+            .insert(rows.slice(i, i + WORDS_INSERT_CHUNK))
+            .select();
+
+        if (error) fail(error.message, 500);
+        inserted.push(...(data || []));
+    }
+
+    return inserted.map(mapWord);
 }

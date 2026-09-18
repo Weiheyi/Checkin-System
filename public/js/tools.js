@@ -355,13 +355,29 @@ function parseLine(raw) {
     return { term, meaning };
 }
 
+// 多列表格拍平成一行后，一行里会挤进好几组「单词 + 释义」。
+// 在「中文 + 空白 +（可选序号）+ 英文」处切分；刻意不用 lookbehind，
+// 因为老浏览器不支持会让整个模块直接语法报错。
+function splitPairs(line) {
+    const marked = line.replace(
+        /([\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff])[ \t]+(?=(?:\d{1,3}[.、)）:：]?[ \t]*)?[A-Za-z])/g,
+        '$1\n'
+    );
+
+    const parts = marked.split('\n').map(part => part.trim()).filter(Boolean);
+    if (parts.length < 2) return [line];
+
+    // 每一段都得同时含中英文，否则多半是切错了（例如中文在前的「苹果 apple」）
+    const valid = parts.every(part => CJK_RE.test(part) && /[A-Za-z]/.test(part));
+    return valid ? parts : [line];
+}
+
 // 整段文本 → 去重后的单词数组；swap 用于中英顺序颠倒的单词表
 function parseWordList(text, { swap = false } = {}) {
     const seen = new Set();
     const list = [];
 
-    String(text || '').split(/\r?\n/).forEach(raw => {
-        const parsed = parseLine(raw);
+    function push(parsed) {
         if (!parsed) return;
 
         let { term, meaning } = parsed;
@@ -371,6 +387,15 @@ function parseWordList(text, { swap = false } = {}) {
         if (!key || seen.has(key)) return;
         seen.add(key);
         list.push({ term, meaning });
+    }
+
+    String(text || '').split(/\r?\n/).forEach(raw => {
+        const line = raw.replace(/\u3000/g, ' ').trim();
+        if (!line) return;
+
+        const parts = splitPairs(line);
+        if (parts.length > 1) parts.forEach(part => push(parseLine(part)));
+        else push(parseLine(line));
     });
 
     return list;
@@ -384,7 +409,9 @@ const wordsState = {
     words: [],
     parsed: [],
     addParsed: [],
-    swap: false
+    swap: false,
+    filter: 'all',
+    selected: new Set()
 };
 
 const study = { queue: [], index: 0, revealed: false, result: { known: 0, vague: 0, again: 0 } };
@@ -392,7 +419,11 @@ const study = { queue: [], index: 0, revealed: false, result: { known: 0, vague:
 const quiz = {
     type: 'choice',
     dir: 'term',
+    scope: 'all',
     size: 10,
+    customSize: 0,
+    // 「考核选中」时直接指定词池，优先级高于 scope
+    override: null,
     questions: [],
     index: 0,
     correct: 0,
@@ -400,11 +431,22 @@ const quiz = {
     answered: false
 };
 
-function masteryLabel(mastery) {
-    if (mastery >= 5) return '已掌握';
-    if (mastery >= 3) return '熟悉';
-    if (mastery >= 1) return '学习中';
-    return '新词';
+// 上千词的列表一次全渲染会卡，超出部分靠筛选或分页查看
+const WORD_RENDER_LIMIT = 300;
+
+// 最近一次背诵/考核的结果
+const STATUS_LABELS = { known: '认识', vague: '模糊', again: '不认识', new: '未背' };
+const FILTER_LABELS = { all: '全部', new: '未背', known: '认识', vague: '模糊', again: '不认识' };
+
+function wordStatus(word) {
+    return word.last_result && STATUS_LABELS[word.last_result] ? word.last_result : 'new';
+}
+
+function wordsByScope(scope) {
+    const all = wordsState.words;
+    if (scope === 'all') return all;
+    if (scope === 'new') return all.filter(word => !word.last_result);
+    return all.filter(word => word.last_result === scope);
 }
 
 function showWordView(view) {
@@ -585,6 +627,8 @@ async function openBook(id) {
         const { book, words } = await api.wordbooks.detail(id);
         wordsState.current = book;
         wordsState.words = words;
+        wordsState.filter = 'all';
+        wordsState.selected.clear();
         els.detailTitle.textContent = book.name;
         renderDetailStats();
         showWordView('detail');
@@ -607,15 +651,51 @@ function openDetailTab(view) {
     else if (view === 'list') renderWordList();
 }
 
+function renderWordFilter() {
+    const counts = { all: wordsState.words.length, new: 0, known: 0, vague: 0, again: 0 };
+    wordsState.words.forEach(word => {
+        counts[wordStatus(word)] += 1;
+    });
+
+    $$('#wordFilter button').forEach(btn => {
+        const key = btn.dataset.filter;
+        btn.classList.toggle('active', key === wordsState.filter);
+        btn.textContent = `${FILTER_LABELS[key]} ${counts[key]}`;
+    });
+}
+
+function renderSelectBar() {
+    const size = wordsState.selected.size;
+    els.selectCount.textContent = `已选 ${size} 个`;
+    els.quizSelectedBtn.disabled = size === 0;
+}
+
 function renderWordList() {
-    const words = wordsState.words;
-    els.wordEmpty.hidden = words.length > 0;
-    els.wordList.replaceChildren();
+    renderWordFilter();
+    renderSelectBar();
+
+    const visible = wordsByScope(wordsState.filter);
+    const shown = visible.slice(0, WORD_RENDER_LIMIT);
+
+    els.wordEmpty.hidden = visible.length > 0;
+    els.wordEmpty.textContent = wordsState.words.length ? '这个筛选条件下还没有单词' : '这个本子还没有单词';
 
     const fragment = document.createDocumentFragment();
-    words.forEach(word => {
+
+    shown.forEach(word => {
         const li = document.createElement('li');
         li.className = 'word-item';
+
+        const check = document.createElement('input');
+        check.type = 'checkbox';
+        check.className = 'word-check';
+        check.checked = wordsState.selected.has(word.id);
+        check.setAttribute('aria-label', `选择单词 ${word.term}`);
+        check.addEventListener('change', () => {
+            if (check.checked) wordsState.selected.add(word.id);
+            else wordsState.selected.delete(word.id);
+            renderSelectBar();
+        });
 
         const main = document.createElement('div');
         main.className = 'word-main';
@@ -630,13 +710,10 @@ function renderWordList() {
 
         main.append(term, meaning);
 
-        const meta = document.createElement('div');
-        meta.className = 'word-meta';
-
+        const status = wordStatus(word);
         const badge = document.createElement('span');
-        badge.className = `mastery-badge m${Math.min(5, word.mastery)}`;
-        badge.textContent = masteryLabel(word.mastery);
-        meta.appendChild(badge);
+        badge.className = `status-badge status-${status}`;
+        badge.textContent = STATUS_LABELS[status];
 
         const del = document.createElement('button');
         del.type = 'button';
@@ -645,17 +722,35 @@ function renderWordList() {
         del.setAttribute('aria-label', `删除单词 ${word.term}`);
         del.addEventListener('click', () => removeWord(word));
 
-        li.append(main, meta, del);
+        li.append(check, main, badge, del);
         fragment.appendChild(li);
     });
 
-    els.wordList.appendChild(fragment);
+    if (visible.length > shown.length) {
+        const more = document.createElement('li');
+        more.className = 'word-more';
+        more.textContent = `只渲染了前 ${WORD_RENDER_LIMIT} 个（共 ${visible.length} 个）。可用上方筛选查看其余，「全选当前」会对全部生效。`;
+        fragment.appendChild(more);
+    }
+
+    els.wordList.replaceChildren(fragment);
+}
+
+function selectAllVisible() {
+    wordsByScope(wordsState.filter).forEach(word => wordsState.selected.add(word.id));
+    renderWordList();
+}
+
+function clearSelection() {
+    wordsState.selected.clear();
+    renderWordList();
 }
 
 async function removeWord(word) {
     try {
         await api.wordbooks.removeWord(word.id);
         wordsState.words = wordsState.words.filter(item => item.id !== word.id);
+        wordsState.selected.delete(word.id);
         wordsState.current.wordCount = wordsState.words.length;
         renderWordList();
         renderDetailStats();
@@ -680,6 +775,7 @@ async function resetProgress() {
             word.review_count = 0;
             word.correct_count = 0;
             word.wrong_count = 0;
+            word.last_result = '';
             word.last_reviewed_at = null;
         });
         renderWordList();
@@ -793,6 +889,7 @@ function markStudy(mark) {
         word.wrong_count += 1;
     }
     word.review_count += 1;
+    word.last_result = mark;
     saveWord(word);
 
     study.result[mark] += 1;
@@ -825,22 +922,46 @@ function resetQuizSetup() {
     updateQuizHint();
 }
 
+// 当前范围里可参与考核的单词（override 优先，来自「考核选中」）
+function quizPool() {
+    const source = quiz.override || wordsByScope(quiz.scope);
+    return source.filter(word => word.term && word.meaning);
+}
+
+function quizLimit(poolSize) {
+    const wanted = quiz.customSize > 0 ? quiz.customSize : quiz.size;
+    return wanted > 0 ? Math.min(wanted, poolSize) : poolSize;
+}
+
 function updateQuizHint() {
-    const usable = wordsState.words.filter(w => w.term && w.meaning).length;
-    const notes = [`共 ${wordsState.words.length} 个单词，其中 ${usable} 个有释义可参与考核。`];
-    if (!usable) notes.push('请先在「单词」里补充释义。');
-    else if (quiz.type === 'choice' && usable < 4) notes.push('选择题需要至少 4 个带释义的单词才能凑齐选项，建议改用拼写。');
+    const pool = quizPool();
+    const picked = quizLimit(pool.length);
+    const notes = [];
+
+    if (quiz.override) {
+        notes.push(`已选中 ${quiz.override.length} 个单词，随机抽 ${picked} 题。`);
+    } else {
+        notes.push(`本子共 ${wordsState.words.length} 个单词，「${FILTER_LABELS[quiz.scope]}」范围内 ${pool.length} 个可考核，随机抽 ${picked} 题。`);
+    }
+
+    if (!pool.length) {
+        notes.push('该范围内没有可考核的单词，请先补释义或换个范围。');
+    } else if (quiz.type === 'choice' && pool.length < 4) {
+        notes.push('选择题至少需要 4 个带释义的单词才能凑齐选项，建议改用拼写。');
+    }
+
     els.quizSetupHint.textContent = notes.join(' ');
 }
 
 function buildQuizQuestions() {
-    const usable = wordsState.words.filter(w => w.term && w.meaning);
-    if (!usable.length) return [];
+    const pool = quizPool();
+    // 干扰项从整本书里取，选项才不至于过于集中
+    const usable = wordsState.words.filter(word => word.term && word.meaning);
+    if (!pool.length || !usable.length) return [];
 
-    const pool = shuffle(usable.slice());
-    const limit = quiz.size > 0 ? Math.min(quiz.size, pool.length) : pool.length;
+    const picked = shuffle(pool.slice()).slice(0, quizLimit(pool.length));
 
-    return pool.slice(0, limit).map(word => {
+    return picked.map(word => {
         if (quiz.type === 'spell') {
             return { word, kind: 'spell', prompt: word.meaning, sub: '根据释义拼写单词', answer: word.term };
         }
@@ -877,6 +998,19 @@ function startQuiz() {
     els.quizResult.hidden = true;
     els.quizRun.hidden = false;
     renderQuizQuestion();
+}
+
+// 从「单词」列表勾选后直接开考，词池由 override 指定
+function quizSelected() {
+    const usable = wordsState.words
+        .filter(word => wordsState.selected.has(word.id))
+        .filter(word => word.term && word.meaning);
+
+    if (!usable.length) return toast('选中的单词都没有释义，无法考核', 'error');
+
+    quiz.override = usable;
+    openDetailTab('quiz');
+    startQuiz();
 }
 
 function renderQuizProgress() {
@@ -1034,7 +1168,8 @@ function saveWord(word) {
         mastery: word.mastery,
         review_count: word.review_count,
         correct_count: word.correct_count,
-        wrong_count: word.wrong_count
+        wrong_count: word.wrong_count,
+        last_result: word.last_result || null
     }).catch(() => {});
 }
 
@@ -1043,9 +1178,11 @@ function applyQuizResult(word, correct) {
     if (correct) {
         word.correct_count += 1;
         word.mastery = Math.min(5, word.mastery + 1);
+        word.last_result = 'known';
     } else {
         word.wrong_count += 1;
         word.mastery = 0;
+        word.last_result = 'again';
     }
     saveWord(word);
 }
@@ -1239,7 +1376,9 @@ function cacheElements() {
     els.quizSetupHint = $('#quizSetupHint');
     els.quizTypeGroup = $('#quizTypeGroup');
     els.quizDirGroup = $('#quizDirGroup');
+    els.quizScopeGroup = $('#quizScopeGroup');
     els.quizSizeGroup = $('#quizSizeGroup');
+    els.quizSizeInput = $('#quizSizeInput');
     els.quizStart = $('#quizStart');
     els.quizRun = $('#quizRun');
     els.quizProgress = $('#quizProgress');
@@ -1256,6 +1395,11 @@ function cacheElements() {
     els.listView = $('#listView');
     els.wordList = $('#wordList');
     els.wordEmpty = $('#wordEmpty');
+    els.wordFilter = $('#wordFilter');
+    els.selectCount = $('#selectCount');
+    els.selectAllBtn = $('#selectAllBtn');
+    els.selectClearBtn = $('#selectClearBtn');
+    els.quizSelectedBtn = $('#quizSelectedBtn');
     els.addWordsBtn = $('#addWordsBtn');
     els.resetProgressBtn = $('#resetProgressBtn');
     els.deleteBookBtn = $('#deleteBookBtn');
@@ -1362,18 +1506,53 @@ function bindEvents() {
         quiz.dir = btn.dataset.dir;
         $$('#quizDirGroup button').forEach(item => item.classList.toggle('active', item === btn));
     });
+    els.quizScopeGroup.addEventListener('click', e => {
+        const btn = e.target.closest('button[data-scope]');
+        if (!btn) return;
+        quiz.scope = btn.dataset.scope;
+        quiz.override = null;
+        $$('#quizScopeGroup button').forEach(item => item.classList.toggle('active', item === btn));
+        updateQuizHint();
+    });
     els.quizSizeGroup.addEventListener('click', e => {
         const btn = e.target.closest('button[data-size]');
         if (!btn) return;
         quiz.size = Number(btn.dataset.size);
+        quiz.customSize = 0;
+        els.quizSizeInput.value = '';
         $$('#quizSizeGroup button').forEach(item => item.classList.toggle('active', item === btn));
+        updateQuizHint();
     });
-    els.quizStart.addEventListener('click', startQuiz);
+    els.quizSizeInput.addEventListener('input', () => {
+        const value = Math.floor(Number(els.quizSizeInput.value));
+        quiz.customSize = value > 0 ? value : 0;
+
+        // 自定义优先；清空后回到上方选中的题量
+        $$('#quizSizeGroup button').forEach(item => {
+            item.classList.toggle('active', quiz.customSize === 0 && Number(item.dataset.size) === quiz.size);
+        });
+        updateQuizHint();
+    });
+    els.quizStart.addEventListener('click', () => {
+        quiz.override = null;
+        startQuiz();
+    });
     els.quizSubmit.addEventListener('click', submitSpell);
     els.quizInput.addEventListener('keydown', e => {
         if (e.key === 'Enter') submitSpell();
     });
     els.quizNext.addEventListener('click', nextQuestion);
+
+    // 单词列表：状态筛选与勾选
+    els.wordFilter.addEventListener('click', e => {
+        const btn = e.target.closest('button[data-filter]');
+        if (!btn) return;
+        wordsState.filter = btn.dataset.filter;
+        renderWordList();
+    });
+    els.selectAllBtn.addEventListener('click', selectAllVisible);
+    els.selectClearBtn.addEventListener('click', clearSelection);
+    els.quizSelectedBtn.addEventListener('click', quizSelected);
 
     // 单词列表
     els.addWordsBtn.addEventListener('click', openAddWords);

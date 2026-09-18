@@ -67,6 +67,9 @@ create table if not exists public.words (
   created_at timestamptz not null default now()
 );
 
+-- 兼容已存在的旧表：记录最近一次背诵/考核的结果（known / vague / again）
+alter table public.words add column if not exists last_result text;
+
 -- ============================================================
 -- 二、好友与点赞
 -- ============================================================

@@ -2045,12 +2045,17 @@ button {
     word-break: break-word;
 }
 
-.word-meta {
+.word-check {
+    width: 18px;
+    height: 18px;
     flex-shrink: 0;
+    margin-right: var(--space-2);
+    cursor: pointer;
+    accent-color: var(--color-primary);
 }
 
-.mastery-badge {
-    display: inline-block;
+.status-badge {
+    flex-shrink: 0;
     padding: 3px 10px;
     border: 1px solid var(--border);
     border-radius: var(--radius-pill);
@@ -2059,22 +2064,111 @@ button {
     background: var(--surface);
 }
 
-.mastery-badge.m1,
-.mastery-badge.m2 {
+.status-badge.status-known {
+    color: var(--color-success);
+    border-color: var(--color-success);
+    background: var(--color-success-soft);
+}
+
+.status-badge.status-vague {
     color: var(--color-warning);
     border-color: var(--color-warning);
 }
 
-.mastery-badge.m3,
-.mastery-badge.m4 {
-    color: var(--color-primary);
-    border-color: var(--color-primary);
+.status-badge.status-again {
+    color: var(--color-danger);
+    border-color: var(--color-danger);
+    background: var(--color-danger-soft);
 }
 
-.mastery-badge.m5 {
-    color: var(--color-success);
-    border-color: var(--color-success);
-    background: var(--color-success-soft);
+.word-more {
+    padding: var(--space-3);
+    text-align: center;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text-faint);
+}
+
+.filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    margin-bottom: var(--space-3);
+}
+
+.filter-row button {
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: var(--radius-pill);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.filter-row button:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+.filter-row button.active {
+    background: var(--color-primary-soft);
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+.select-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    padding: 10px 12px;
+    margin-bottom: var(--space-3);
+    background: var(--surface-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+}
+
+.select-count {
+    margin-right: auto;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.btn-inline {
+    padding: 8px 16px;
+    background: var(--color-primary);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.btn-inline:hover:not(:disabled) {
+    background: var(--color-primary-dark);
+}
+
+.btn-inline:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.switch-group.switch-wrap {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.quiz-size-input {
+    flex: 0 0 auto;
+    width: 150px;
+    padding: 8px 12px;
+    font-size: 14px;
 }
 
 .word-delete {
