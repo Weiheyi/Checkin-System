@@ -1,16 +1,6 @@
 export const $ = (selector, root = document) => root.querySelector(selector);
 export const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
-export function escapeHtml(value) {
-    return String(value).replace(/[&<>"']/g, char => ({
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#39;'
-    }[char]));
-}
-
 export function formatDateZh(date = new Date()) {
     return date.toLocaleDateString('zh-CN', {
         year: 'numeric',

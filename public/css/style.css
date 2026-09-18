@@ -720,7 +720,46 @@ button {
     }
 }
 
-/* ========== 人机验证与密码找回 ========== */
+/* ========== 人机验证 ========== */
+
+/* 第一层：四则运算，纯前端辅助校验 */
+.math-question {
+    color: var(--color-primary-dark);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.math-input-row {
+    display: flex;
+    gap: var(--space-2);
+}
+
+.math-answer {
+    flex: 1;
+    min-width: 0;
+}
+
+.math-refresh {
+    flex-shrink: 0;
+    width: 46px;
+    padding: 0;
+    background: var(--bg);
+    border: 2px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.math-refresh:hover {
+    color: var(--color-primary);
+    border-color: var(--color-primary);
+    background: var(--color-primary-soft);
+}
+
+/* 第二层：Cloudflare Turnstile，token 由 Supabase 用 Secret Key 在服务端校验 */
 .captcha-box {
     display: flex;
     justify-content: center;
@@ -729,46 +768,6 @@ button {
 /* 未渲染组件时（例如还没配置 Site Key）不占位 */
 .captcha-box:empty {
     display: none;
-}
-
-.link-btn {
-    padding: 0;
-    background: none;
-    border: none;
-    color: var(--text-muted);
-    font-size: 14px;
-    font-family: inherit;
-    cursor: pointer;
-    transition: color var(--transition);
-}
-
-.link-btn:hover {
-    color: var(--color-primary);
-    text-decoration: underline;
-}
-
-/* 找回密码 / 设置新密码 面板 */
-.panel-header {
-    text-align: center;
-}
-
-.panel-icon {
-    display: block;
-    font-size: 34px;
-    margin-bottom: var(--space-2);
-}
-
-.panel-title {
-    color: var(--text-strong);
-    font-size: 17px;
-    font-weight: 600;
-}
-
-.panel-sub {
-    margin-top: var(--space-1);
-    color: var(--text-muted);
-    font-size: 13px;
-    line-height: 1.6;
 }
 
 @media (prefers-reduced-motion: reduce) {

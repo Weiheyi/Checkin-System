@@ -81,6 +81,10 @@ async function getTodayCheckin(userId) {
     return data;
 }
 
+// 连续天数只取决于最近这段日子，取最近 STREAK_WINDOW 天即可，
+// 免得打卡记录越积越多时把全部日期都拉回前端
+const STREAK_WINDOW = 400;
+
 function computeStreak(dates) {
     const set = new Set(dates);
     const cursor = new Date();
@@ -99,13 +103,7 @@ function translateAuthError(error) {
     const message = (error && error.message) || '操作失败';
     if (/Invalid login credentials/i.test(message)) return '邮箱或密码错误';
     if (/User already registered|already been registered/i.test(message)) return '该邮箱已注册，请直接登录';
-    if (/Email not confirmed/i.test(message)) return '邮箱尚未确认，请先在邮箱中完成确认';
     if (/captcha/i.test(message)) return '人机验证未通过，请刷新页面后重试';
-    if (/should be different from the old password/i.test(message)) return '新密码不能与旧密码相同';
-    if (/Auth session missing|session.*not found/i.test(message)) return '重置链接已失效，请重新发起找回密码';
-    if (/Email address not authorized/i.test(message)) return '邮件发送失败：Supabase 自带邮件服务只能发送到项目成员邮箱';
-    if (/Error sending|sending.*email/i.test(message)) return '邮件发送失败，请检查 Supabase 的邮件配置';
-    if (/over_email_send_rate_limit|email.*rate limit/i.test(message)) return '邮件发送过于频繁，请稍后再试';
     if (/Password should be at least/i.test(message)) return '密码至少 6 位';
     if (/valid email/i.test(message)) return '邮箱格式不正确';
     if (/rate limit|too many requests/i.test(message)) return '操作过于频繁，请稍后再试';
@@ -126,9 +124,10 @@ export const api = {
 
         if (error) fail(translateAuthError(error), 400);
 
-        // 若开启了「Confirm email」，此处不会返回会话，需要用户先去邮箱确认
+        // 建站时必须在 Supabase 关闭「Confirm email」，否则 signUp 不返回会话，
+        // 用户会在未登录状态下被送回登录页而不知道为什么
         if (!data.session) {
-            fail('注册成功，但需要先在邮箱中完成确认才能登录', 400);
+            fail('注册后未能自动登录，请在 Supabase 关闭「Confirm email」后重试', 400);
         }
 
         const user = await buildUser(data.user);
@@ -147,27 +146,6 @@ export const api = {
         const user = await buildUser(data.user);
         store.setUser(user);
         return { user };
-    },
-
-    // 发送密码重置邮件；链接地址取自 Supabase 的 SITE_URL 配置
-    async forgotPassword({ email, captchaToken }) {
-        const { error } = await supabase.auth.resetPasswordForEmail(email, { captchaToken });
-        if (error) fail(translateAuthError(error), 400);
-        return {};
-    },
-
-    // 用户点击邮件里的重置链接后，会带着恢复会话回到本站，此时才能改密码
-    async updatePassword(password) {
-        const { error } = await supabase.auth.updateUser({ password });
-        if (error) fail(translateAuthError(error), 400);
-        return {};
-    },
-
-    // 监听「通过重置链接进入」这一事件
-    onPasswordRecovery(handler) {
-        supabase.auth.onAuthStateChange(event => {
-            if (event === 'PASSWORD_RECOVERY') handler();
-        });
     },
 
     async logout() {
@@ -224,7 +202,11 @@ export const api = {
             supabase.from('checkins').select('*', { count: 'exact', head: true }).eq('user_id', user.id),
             supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('user_id', user.id),
             supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('completed', true),
-            supabase.from('checkins').select('checkin_date').eq('user_id', user.id)
+            supabase.from('checkins')
+                .select('checkin_date')
+                .eq('user_id', user.id)
+                .order('checkin_date', { ascending: false })
+                .limit(STREAK_WINDOW)
         ]);
 
         const totalTasks = allTasks.count || 0;

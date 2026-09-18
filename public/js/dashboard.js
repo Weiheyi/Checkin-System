@@ -3,7 +3,7 @@ import { store } from './store.js';
 import { PAGES } from './config.js';
 import { $, toast, setLoading, formatDateZh } from './ui.js';
 
-const state = { checkin: null, tasks: [] };
+const state = { checkin: null, tasks: [], stats: null, history: [] };
 const els = {};
 
 function cacheElements() {
@@ -40,8 +40,7 @@ function renderCheckinState() {
 }
 
 function renderTasks() {
-    els.taskList.innerHTML = '';
-    els.taskEmpty.hidden = state.tasks.length > 0;
+    const fragment = document.createDocumentFragment();
 
     state.tasks.forEach(task => {
         const li = document.createElement('li');
@@ -72,24 +71,17 @@ function renderTasks() {
         del.addEventListener('click', () => deleteTask(task));
 
         li.append(check, text, del);
-        els.taskList.appendChild(li);
+        fragment.appendChild(li);
     });
+
+    els.taskList.replaceChildren(fragment);
+    els.taskEmpty.hidden = state.tasks.length > 0;
 }
 
-async function loadToday() {
-    try {
-        const data = await api.getToday();
-        state.checkin = data.checkin;
-        state.tasks = data.tasks || [];
-        renderCheckinState();
-        renderTasks();
-    } catch (err) {
-        toast(err.message, 'error');
-    }
-}
+function renderStats() {
+    const stats = state.stats;
+    if (!stats) return;
 
-async function loadStats() {
-    const stats = await api.stats();
     els.totalDays.textContent = stats.totalDays;
     els.streakDays.textContent = stats.streak;
     els.completedTasks.textContent = stats.completedTasks;
@@ -99,12 +91,10 @@ async function loadStats() {
         : '今天开始你的打卡';
 }
 
-async function loadHistory() {
-    const history = await api.history(10);
-    els.historyList.innerHTML = '';
-    els.historyEmpty.hidden = history.length > 0;
+function renderHistory() {
+    const fragment = document.createDocumentFragment();
 
-    history.forEach(item => {
+    state.history.forEach(item => {
         const total = item.taskCount;
         const done = item.completedTaskCount;
         const rate = total ? Math.round((done / total) * 100) : 0;
@@ -133,12 +123,60 @@ async function loadHistory() {
         progress.appendChild(fill);
 
         card.append(head, progress);
-        els.historyList.appendChild(card);
+        fragment.appendChild(card);
     });
+
+    els.historyList.replaceChildren(fragment);
+    els.historyEmpty.hidden = state.history.length > 0;
+}
+
+async function loadToday() {
+    try {
+        const data = await api.getToday();
+        state.checkin = data.checkin;
+        state.tasks = data.tasks || [];
+        renderCheckinState();
+        renderTasks();
+    } catch (err) {
+        toast(err.message, 'error');
+    }
+}
+
+async function loadStats() {
+    state.stats = await api.stats();
+    renderStats();
+}
+
+async function loadHistory() {
+    state.history = await api.history(10);
+    renderHistory();
 }
 
 async function refreshSummary() {
     await Promise.all([loadStats(), loadHistory()]);
+}
+
+// 任务的增删改只会影响「任务数 / 完成数」这两项统计，
+// 所以在本地做增量更新即可，不必每次都把统计和历史整批重新拉一遍。
+// 单日增减量为参数：totalDelta 表示任务总数变化，doneDelta 表示已完成数变化。
+function applyTaskDelta(totalDelta, doneDelta) {
+    const stats = state.stats;
+    if (stats) {
+        stats.totalTasks = Math.max(0, stats.totalTasks + totalDelta);
+        stats.completedTasks = Math.max(0, stats.completedTasks + doneDelta);
+        stats.completionRate = stats.totalTasks
+            ? Math.round((stats.completedTasks / stats.totalTasks) * 100)
+            : 0;
+        renderStats();
+    }
+
+    const today = state.checkin && state.checkin.checkin_date;
+    const entry = today && state.history.find(item => item.checkin_date === today);
+    if (entry) {
+        entry.taskCount = Math.max(0, entry.taskCount + totalDelta);
+        entry.completedTaskCount = Math.max(0, entry.completedTaskCount + doneDelta);
+        renderHistory();
+    }
 }
 
 async function handleCheckIn() {
@@ -174,7 +212,7 @@ async function addTask() {
         state.tasks.push(task);
         els.taskInput.value = '';
         renderTasks();
-        await refreshSummary();
+        applyTaskDelta(1, 0);
     } catch (err) {
         toast(err.message, 'error');
     } finally {
@@ -183,11 +221,12 @@ async function addTask() {
 }
 
 async function toggleTask(task) {
+    const completed = !task.completed;
     try {
-        const { task: updated } = await api.tasks.toggle(task.id, !task.completed);
+        const { task: updated } = await api.tasks.toggle(task.id, completed);
         Object.assign(task, updated);
         renderTasks();
-        await refreshSummary();
+        applyTaskDelta(0, completed ? 1 : -1);
     } catch (err) {
         toast(err.message, 'error');
         renderTasks();
@@ -199,7 +238,7 @@ async function deleteTask(task) {
         await api.tasks.remove(task.id);
         state.tasks = state.tasks.filter(t => t.id !== task.id);
         renderTasks();
-        await refreshSummary();
+        applyTaskDelta(-1, task.completed ? -1 : 0);
     } catch (err) {
         toast(err.message, 'error');
     }
@@ -222,6 +261,7 @@ async function init() {
     cacheElements();
     els.currentDate.textContent = formatDateZh();
 
+    // 本地有缓存就先渲染，省掉一次资料请求；会话是否有效由下面的数据请求验证
     const cached = store.getUser();
     if (cached) renderUser(cached);
 
@@ -233,14 +273,10 @@ async function init() {
     els.logoutBtn.addEventListener('click', logout);
 
     try {
-        const { user } = await api.me();
-        store.setUser(user);
-        renderUser(user);
+        await Promise.all([loadToday(), loadStats(), loadHistory()]);
     } catch {
-        return;
+        // requireUser 已经跳回登录页，这里无需再处理
     }
-
-    await Promise.all([loadToday(), loadStats(), loadHistory()]);
 }
 
 init();

@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>登录 - 学习打卡系统</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="preconnect" href="https://challenges.cloudflare.com">
+    <link rel="preconnect" href="https://dhemqusvocjcbfvopwcm.supabase.co" crossorigin>
     <link rel="stylesheet" href="css/style.css">
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 </head>
@@ -31,9 +33,15 @@
                     <label for="loginPassword">密码</label>
                     <input type="password" id="loginPassword" autocomplete="current-password" required placeholder="请输入密码">
                 </div>
+                <div class="form-group">
+                    <label for="loginMathAnswer">人机验证：<span id="loginMathQuestion" class="math-question" aria-live="polite"></span></label>
+                    <div class="math-input-row">
+                        <input type="text" id="loginMathAnswer" class="math-answer" inputmode="numeric" autocomplete="off" required placeholder="请输入计算结果">
+                        <button type="button" id="loginMathRefresh" class="math-refresh" title="换一题" aria-label="换一题">↻</button>
+                    </div>
+                </div>
                 <div class="captcha-box" id="loginCaptcha"></div>
                 <button type="submit" class="btn-primary">登录</button>
-                <button type="button" id="forgotLink" class="link-btn">忘记密码？</button>
                 <div id="loginMessage" class="form-message" role="alert"></div>
             </form>
 
@@ -54,44 +62,17 @@
                     <label for="regPasswordConfirm">确认密码</label>
                     <input type="password" id="regPasswordConfirm" autocomplete="new-password" required placeholder="请再次输入密码">
                 </div>
+                <div class="form-group">
+                    <label for="regMathAnswer">人机验证：<span id="regMathQuestion" class="math-question" aria-live="polite"></span></label>
+                    <div class="math-input-row">
+                        <input type="text" id="regMathAnswer" class="math-answer" inputmode="numeric" autocomplete="off" required placeholder="请输入计算结果">
+                        <button type="button" id="regMathRefresh" class="math-refresh" title="换一题" aria-label="换一题">↻</button>
+                    </div>
+                </div>
                 <div class="captcha-box" id="regCaptcha"></div>
                 <button type="submit" class="btn-primary">注册</button>
                 <div id="registerMessage" class="form-message" role="alert"></div>
             </form>
-
-            <div id="forgotPanel" class="auth-form hidden">
-                <div class="panel-header">
-                    <span class="panel-icon">🔑</span>
-                    <p class="panel-title">找回密码</p>
-                    <p class="panel-sub">请输入注册时使用的邮箱，我们会发送一封重置邮件</p>
-                </div>
-                <div class="form-group">
-                    <label for="forgotEmail">邮箱</label>
-                    <input type="email" id="forgotEmail" autocomplete="email" placeholder="请输入注册时使用的邮箱">
-                </div>
-                <div class="captcha-box" id="forgotCaptcha"></div>
-                <button type="button" id="forgotBtn" class="btn-primary">发送重置邮件</button>
-                <button type="button" id="forgotBack" class="link-btn">返回登录</button>
-                <div id="forgotMessage" class="form-message" role="alert"></div>
-            </div>
-
-            <div id="resetPanel" class="auth-form hidden">
-                <div class="panel-header">
-                    <span class="panel-icon">🔒</span>
-                    <p class="panel-title">设置新密码</p>
-                    <p class="panel-sub">身份已确认，请为你的账号设置一个新密码</p>
-                </div>
-                <div class="form-group">
-                    <label for="newPassword">新密码</label>
-                    <input type="password" id="newPassword" autocomplete="new-password" placeholder="请输入新密码（至少 6 位）">
-                </div>
-                <div class="form-group">
-                    <label for="newPasswordConfirm">确认新密码</label>
-                    <input type="password" id="newPasswordConfirm" autocomplete="new-password" placeholder="请再次输入新密码">
-                </div>
-                <button type="button" id="resetBtn" class="btn-primary">确认修改</button>
-                <div id="resetMessage" class="form-message" role="alert"></div>
-            </div>
         </div>
     </div>
 
