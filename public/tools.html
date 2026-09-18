@@ -273,12 +273,25 @@
                     </div>
                     <div class="select-bar">
                         <span class="select-count" id="selectCount">已选 0 个</span>
-                        <button class="btn-ghost" id="selectAllBtn" type="button">全选当前</button>
+                        <button class="btn-ghost" id="selectAllBtn" type="button"
+                                title="选中当前筛选下的全部单词，不只本页">全选当前</button>
                         <button class="btn-ghost" id="selectClearBtn" type="button">清空</button>
                         <button class="btn-inline" id="quizSelectedBtn" type="button" disabled>考核选中</button>
                     </div>
                     <ul class="word-list" id="wordList"></ul>
                     <p class="empty-hint" id="wordEmpty" hidden>这个本子还没有单词</p>
+                    <div class="pager" id="wordPager" hidden>
+                        <div class="switch-group" id="pageSizeGroup" role="group" aria-label="每页条数">
+                            <button type="button" data-size="20">20 条</button>
+                            <button type="button" data-size="50" class="active">50 条</button>
+                            <button type="button" data-size="100">100 条</button>
+                        </div>
+                        <div class="pager-nav">
+                            <button class="pager-btn" id="pagePrev" type="button">上一页</button>
+                            <span class="pager-info" id="pageInfo"></span>
+                            <button class="pager-btn" id="pageNext" type="button">下一页</button>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- 消灭错词 -->

@@ -402,7 +402,7 @@ function parseWordList(text, { swap = false } = {}) {
     return list;
 }
 
-/* ---------------- 单词排列顺序 ---------------- */
+/* ---------------- 单词排列与分页 ---------------- */
 
 // 字母序：忽略大小写，数字按数值比（unit 9 排在 unit 10 前面）
 const termCollator = new Intl.Collator('en', { sensitivity: 'base', numeric: true });
@@ -450,6 +450,28 @@ function saveListSort(mode) {
     }
 }
 
+// 单词列表分页：一次只渲染一页，上千词的本子也不会卡
+const PAGE_SIZES = [20, 50, 100];
+const DEFAULT_PAGE_SIZE = 50;
+const PAGE_SIZE_KEY = 'checkin_word_page_size';
+
+function loadPageSize() {
+    try {
+        const value = Number(localStorage.getItem(PAGE_SIZE_KEY));
+        return PAGE_SIZES.includes(value) ? value : DEFAULT_PAGE_SIZE;
+    } catch {
+        return DEFAULT_PAGE_SIZE;
+    }
+}
+
+function savePageSize(size) {
+    try {
+        localStorage.setItem(PAGE_SIZE_KEY, String(size));
+    } catch {
+        /* 隐私模式下写不了，忽略即可 */
+    }
+}
+
 /* ---------------- 单词本 ---------------- */
 
 const wordsState = {
@@ -462,6 +484,8 @@ const wordsState = {
     importSort: 'file',
     addSort: 'file',
     listSort: loadListSort(),
+    pageSize: loadPageSize(),
+    page: 1,
     filter: 'all',
     selected: new Set()
 };
@@ -484,9 +508,6 @@ const quiz = {
     answered: false,
     sessionPromise: null
 };
-
-// 上千词的列表一次全渲染会卡，超出部分靠筛选或分页查看
-const WORD_RENDER_LIMIT = 300;
 
 // 最近一次背诵/考核的结果
 const STATUS_LABELS = { known: '认识', vague: '模糊', again: '不认识', new: '未背' };
@@ -705,6 +726,7 @@ async function openBook(id) {
         wordsState.current = book;
         wordsState.words = words;
         wordsState.filter = 'all';
+        wordsState.page = 1;
         wordsState.selected.clear();
         els.detailTitle.textContent = book.name;
         syncSortSwitch(els.wordSortGroup, wordsState.listSort);
@@ -757,7 +779,8 @@ function renderWordList() {
     renderSelectBar();
 
     const visible = sortWords(wordsByScope(wordsState.filter), wordsState.listSort);
-    const shown = visible.slice(0, WORD_RENDER_LIMIT);
+    const { start, end, pages } = pageRange(visible.length);
+    const shown = visible.slice(start, end);
 
     els.wordEmpty.hidden = visible.length > 0;
     els.wordEmpty.textContent = wordsState.words.length ? '这个筛选条件下还没有单词' : '这个本子还没有单词';
@@ -817,14 +840,37 @@ function renderWordList() {
         fragment.appendChild(li);
     });
 
-    if (visible.length > shown.length) {
-        const more = document.createElement('li');
-        more.className = 'word-more';
-        more.textContent = `只渲染了前 ${WORD_RENDER_LIMIT} 个（共 ${visible.length} 个）。可用上方筛选查看其余，「全选当前」会对全部生效。`;
-        fragment.appendChild(more);
-    }
-
     els.wordList.replaceChildren(fragment);
+    renderWordPager(visible.length, pages);
+}
+
+// 当前页要渲染的区间；顺带把页码夹回合法范围（筛选、排序、删词之后总数都会变）
+function pageRange(total) {
+    const pages = Math.max(1, Math.ceil(total / wordsState.pageSize));
+    wordsState.page = Math.min(Math.max(wordsState.page, 1), pages);
+
+    const start = (wordsState.page - 1) * wordsState.pageSize;
+    return { pages, start, end: start + wordsState.pageSize };
+}
+
+function renderWordPager(total, pages) {
+    els.wordPager.hidden = total === 0;
+    els.pageInfo.textContent = `第 ${wordsState.page} / ${pages} 页 · 共 ${total} 个`;
+    els.pagePrev.disabled = wordsState.page <= 1;
+    els.pageNext.disabled = wordsState.page >= pages;
+
+    [...els.pageSizeGroup.querySelectorAll('button')].forEach(btn => {
+        btn.classList.toggle('active', Number(btn.dataset.size) === wordsState.pageSize);
+    });
+}
+
+function goToPage(page) {
+    wordsState.page = page;
+    renderWordList();
+    // 已经翻到列表下方时回到列表开头，省得手动往上滚
+    if (els.wordList.getBoundingClientRect().top < 0) {
+        els.wordList.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }
 }
 
 function selectAllVisible() {
@@ -2164,6 +2210,12 @@ function cacheElements() {
     els.resetProgressBtn = $('#resetProgressBtn');
     els.deleteBookBtn = $('#deleteBookBtn');
 
+    els.wordPager = $('#wordPager');
+    els.pageSizeGroup = $('#pageSizeGroup');
+    els.pagePrev = $('#pagePrev');
+    els.pageNext = $('#pageNext');
+    els.pageInfo = $('#pageInfo');
+
     els.addWordsView = $('#addWordsView');
     els.addText = $('#addText');
     els.addFile = $('#addFile');
@@ -2357,6 +2409,7 @@ function bindEvents() {
         const btn = e.target.closest('button[data-filter]');
         if (!btn) return;
         wordsState.filter = btn.dataset.filter;
+        wordsState.page = 1;
         renderWordList();
     });
     // 排序切换会记住选择
@@ -2366,8 +2419,20 @@ function bindEvents() {
         wordsState.listSort = btn.dataset.sort;
         saveListSort(wordsState.listSort);
         syncSortSwitch(els.wordSortGroup, wordsState.listSort);
+        wordsState.page = 1;
         renderWordList();
     });
+    // 分页：每页条数同样记住
+    els.pageSizeGroup.addEventListener('click', e => {
+        const btn = e.target.closest('button[data-size]');
+        if (!btn) return;
+        wordsState.pageSize = Number(btn.dataset.size);
+        savePageSize(wordsState.pageSize);
+        wordsState.page = 1;
+        renderWordList();
+    });
+    els.pagePrev.addEventListener('click', () => goToPage(wordsState.page - 1));
+    els.pageNext.addEventListener('click', () => goToPage(wordsState.page + 1));
     els.selectAllBtn.addEventListener('click', selectAllVisible);
     els.selectClearBtn.addEventListener('click', clearSelection);
     els.quizSelectedBtn.addEventListener('click', quizSelected);

@@ -2127,12 +2127,50 @@ button {
     background: var(--color-danger-soft);
 }
 
-.word-more {
-    padding: var(--space-3);
-    text-align: center;
-    font-size: 12px;
-    line-height: 1.6;
-    color: var(--text-faint);
+.pager {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
+}
+
+.pager-nav {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-left: auto;
+}
+
+.pager-info {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.pager-btn {
+    padding: 7px 14px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.pager-btn:hover:not(:disabled) {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+    background: var(--color-primary-soft);
+}
+
+.pager-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
 }
 
 .filter-row {
