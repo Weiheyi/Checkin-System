@@ -1,5 +1,5 @@
 import { api } from './api.js';
-import { $, $$, toast, confirmDialog, setLoading } from './ui.js';
+import { $, $$, toast, confirmDialog, setLoading, skeletonRows } from './ui.js';
 import { initShell } from './shell.js';
 import { extractFile, ACCEPT } from './file-extract.js';
 import { phoneticOf, loadPhonetics, phoneticsReady, speak, warmUpVoices } from './phonetic.js';
@@ -415,7 +415,8 @@ const wordsState = {
     selected: new Set()
 };
 
-const study = { queue: [], index: 0, revealed: false, result: { known: 0, vague: 0, again: 0 } };
+// sessionPromise：本轮的学习记录会话 id，在第一次作答时才创建（没作答就不会留下空记录）
+const study = { queue: [], index: 0, revealed: false, result: { known: 0, vague: 0, again: 0 }, sessionPromise: null };
 
 const quiz = {
     type: 'choice',
@@ -429,7 +430,8 @@ const quiz = {
     index: 0,
     correct: 0,
     wrong: [],
-    answered: false
+    answered: false,
+    sessionPromise: null
 };
 
 // 上千词的列表一次全渲染会卡，超出部分靠筛选或分页查看
@@ -438,6 +440,10 @@ const WORD_RENDER_LIMIT = 300;
 // 最近一次背诵/考核的结果
 const STATUS_LABELS = { known: '认识', vague: '模糊', again: '不认识', new: '未背' };
 const FILTER_LABELS = { all: '全部', new: '未背', known: '认识', vague: '模糊', again: '不认识' };
+
+// mastery 记录的是「连续答对（认识）次数」，答错一次清零。
+// 连续答对 2 次就记为已掌握；原来要求 3 次，配上上千词的词库几乎永远到不了 0 之外的数字。
+const MASTERY_TARGET = 2;
 
 function wordStatus(word) {
     return word.last_result && STATUS_LABELS[word.last_result] ? word.last_result : 'new';
@@ -454,6 +460,7 @@ function showWordView(view) {
     els.wordHome.hidden = view !== 'home';
     els.wordImport.hidden = view !== 'import';
     els.wordDetail.hidden = view !== 'detail';
+    els.wordRecords.hidden = view !== 'records';
 }
 
 function renderBooks() {
@@ -497,7 +504,7 @@ function renderBooks() {
 
 function computeStats(words) {
     const total = words.length;
-    const mastered = words.filter(w => w.mastery >= 3).length;
+    const mastered = words.filter(w => w.mastery >= MASTERY_TARGET).length;
     const correct = words.reduce((sum, w) => sum + w.correct_count, 0);
     const wrong = words.reduce((sum, w) => sum + w.wrong_count, 0);
     const rate = correct + wrong ? Math.round((correct / (correct + wrong)) * 100) : 0;
@@ -506,12 +513,17 @@ function computeStats(words) {
 
 function renderDetailStats() {
     const stats = computeStats(wordsState.words);
-    els.detailStats.replaceChildren(statItem('📚', stats.total, '单词总数'), statItem('✅', stats.mastered, '已掌握'), statItem('🎯', `${stats.rate}%`, '正确率'));
+    els.detailStats.replaceChildren(
+        statItem('📚', stats.total, '单词总数'),
+        statItem('✅', stats.mastered, '已掌握', `连续答对 ${MASTERY_TARGET} 次即视为掌握`),
+        statItem('🎯', `${stats.rate}%`, '正确率')
+    );
 }
 
-function statItem(icon, value, label) {
+function statItem(icon, value, label, hint = '') {
     const wrap = document.createElement('div');
     wrap.className = 'stat-item';
+    if (hint) wrap.title = hint;
 
     const iconEl = document.createElement('div');
     iconEl.className = 'stat-icon';
@@ -896,6 +908,8 @@ function startStudy() {
     if (els.studyShuffle.checked) shuffle(study.queue);
     study.index = 0;
     study.revealed = false;
+    study.sessionPromise = null;
+    study.warned = false;
     study.result = { known: 0, vague: 0, again: 0 };
 
     els.studySummary.hidden = true;
@@ -947,7 +961,7 @@ function markStudy(mark) {
     }
     word.review_count += 1;
     word.last_result = mark;
-    saveWord(word);
+    logReview('study', word, mark);
 
     study.result[mark] += 1;
     study.index += 1;
@@ -1050,6 +1064,8 @@ function startQuiz() {
     quiz.correct = 0;
     quiz.wrong = [];
     quiz.answered = false;
+    quiz.sessionPromise = null;
+    quiz.warned = false;
 
     els.quizSetup.hidden = true;
     els.quizResult.hidden = true;
@@ -1234,15 +1250,46 @@ function finishQuiz() {
 
 /* ---------------- 共用 ---------------- */
 
-function saveWord(word) {
-    // 进度非关键路径：不 await，失败也不打断背诵/答题节奏
-    api.wordbooks.saveProgress(word.id, {
-        mastery: word.mastery,
-        review_count: word.review_count,
-        correct_count: word.correct_count,
-        wrong_count: word.wrong_count,
-        last_result: word.last_result || null
-    }).catch(() => {});
+// 记录写入失败只提示一次，避免每答一题弹一次
+function warnRecordFailure(state, message) {
+    if (state.warned) return;
+    state.warned = true;
+    toast(message, 'error');
+}
+
+// 一次作答 → 写学习记录（会话 id 懒创建，同一轮复用）
+// 进度与记录都不是关键路径：不 await，失败也不打断背诵/答题节奏
+function logReview(mode, word, result) {
+    const state = mode === 'quiz' ? quiz : study;
+    const book = wordsState.current;
+
+    if (!state.sessionPromise) {
+        state.sessionPromise = api.wordbooks
+            .startSession({
+                mode,
+                bookId: book && book.id,
+                bookName: book && book.name,
+                total: mode === 'quiz' ? quiz.questions.length : study.queue.length
+            })
+            // 建会话失败也要能记单词进度，只是这一轮不会有明细
+            .catch(err => {
+                warnRecordFailure(state, `学习记录写入失败：${err.message}（单词进度仍会保存）`);
+                return null;
+            });
+    }
+
+    state.sessionPromise
+        .then(sessionId => api.wordbooks.recordReview(sessionId, word.id, result))
+        .then(row => {
+            if (!row) return;
+            // 熟练度由服务端计算，用返回值覆盖本地的乐观更新
+            word.mastery = row.mastery;
+            word.review_count = row.review_count;
+            word.correct_count = row.correct_count;
+            word.wrong_count = row.wrong_count;
+            word.last_result = row.last_result || '';
+        })
+        .catch(err => warnRecordFailure(state, `学习记录保存失败：${err.message}`));
 }
 
 function applyQuizResult(word, correct) {
@@ -1256,7 +1303,7 @@ function applyQuizResult(word, correct) {
         word.mastery = 0;
         word.last_result = 'again';
     }
-    saveWord(word);
+    logReview('quiz', word, correct ? 'known' : 'again');
 }
 
 function renderSummary(host, items, titleText) {
@@ -1286,6 +1333,248 @@ function renderSummary(host, items, titleText) {
     });
 
     host.append(title, grid);
+}
+
+/* ---------------- 学习记录 ---------------- */
+
+const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+const recordsState = { kind: 'all', sessions: [] };
+
+function dayKeyOf(date) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+}
+
+function formatDayLabel(key) {
+    const today = dayKeyOf(new Date());
+    if (key === today) return '今天';
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (key === dayKeyOf(yesterday)) return '昨天';
+
+    const [y, m, d] = key.split('-').map(Number);
+    return `${m} 月 ${d} 日 ${WEEKDAYS[new Date(y, m - 1, d).getDay()]}`;
+}
+
+function formatClock(iso) {
+    const date = new Date(iso);
+    return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+}
+
+// 实际作答的数量：会话在第一次作答时才创建，中途退出就会少于 total
+function sessionAnswered(session) {
+    return session.known + session.vague + session.again;
+}
+
+function sessionMetaText(session) {
+    const count = sessionAnswered(session);
+    if (session.mode === 'quiz') {
+        const rate = count ? Math.round((session.correct / count) * 100) : 0;
+        return `共 ${count} 题 · 对 ${session.correct} · 错 ${session.wrong} · 正确率 ${rate}%`;
+    }
+    return `共 ${count} 个 · 认识 ${session.known} · 模糊 ${session.vague} · 不认识 ${session.again}`;
+}
+
+function openRecords() {
+    recordsState.kind = 'all';
+    $$('#recordsFilter button').forEach(btn => btn.classList.toggle('active', btn.dataset.kind === 'all'));
+    showWordView('records');
+
+    els.recordsToday.replaceChildren();
+    els.recordsEmpty.hidden = true;
+    els.recordList.replaceChildren(skeletonRows(3));
+
+    // 每次打开都重新拉，刚背完的记录立刻能看到
+    api.wordbooks
+        .records(200)
+        .then(sessions => {
+            recordsState.sessions = sessions;
+            renderRecords();
+        })
+        .catch(err => {
+            els.recordList.replaceChildren();
+            toast(err.message, 'error');
+        });
+}
+
+function renderRecords() {
+    renderRecordsToday();
+    renderRecordList();
+}
+
+function renderRecordsToday() {
+    const today = dayKeyOf(new Date());
+    const todays = recordsState.sessions.filter(session => dayKeyOf(new Date(session.createdAt)) === today);
+
+    const studyCount = todays
+        .filter(session => session.mode === 'study')
+        .reduce((sum, session) => sum + sessionAnswered(session), 0);
+    const quizSessions = todays.filter(session => session.mode === 'quiz');
+    const quizCount = quizSessions.reduce((sum, session) => sum + sessionAnswered(session), 0);
+    const quizCorrect = quizSessions.reduce((sum, session) => sum + session.correct, 0);
+    const rate = quizCount ? Math.round((quizCorrect / quizCount) * 100) : 0;
+
+    els.recordsToday.replaceChildren(
+        statItem('📖', studyCount, '今日背诵'),
+        statItem('📝', quizCount, '今日考核'),
+        statItem('🎯', `${rate}%`, '今日正确率')
+    );
+}
+
+function renderRecordList() {
+    const sessions = recordsState.sessions.filter(
+        session => recordsState.kind === 'all' || session.mode === recordsState.kind
+    );
+
+    els.recordList.replaceChildren();
+
+    if (!sessions.length) {
+        els.recordsEmpty.hidden = false;
+        els.recordsEmpty.textContent = recordsState.sessions.length
+            ? '这个筛选下还没有记录'
+            : '还没有记录，先去背几个单词吧';
+        return;
+    }
+    els.recordsEmpty.hidden = true;
+
+    // 接口已按时间倒序返回，顺序扫一遍即可按天分组
+    const groups = new Map();
+    sessions.forEach(session => {
+        const key = dayKeyOf(new Date(session.createdAt));
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(session);
+    });
+
+    const fragment = document.createDocumentFragment();
+    groups.forEach((items, key) => fragment.appendChild(renderRecordDay(key, items)));
+    els.recordList.appendChild(fragment);
+}
+
+function renderRecordDay(key, sessions) {
+    const day = document.createElement('div');
+    day.className = 'record-day';
+
+    const head = document.createElement('div');
+    head.className = 'record-day-head';
+
+    const date = document.createElement('span');
+    date.className = 'record-date';
+    date.textContent = formatDayLabel(key);
+
+    const sum = document.createElement('span');
+    sum.className = 'record-day-sum';
+
+    const parts = [];
+    const studySessions = sessions.filter(session => session.mode === 'study');
+    const quizSessions = sessions.filter(session => session.mode === 'quiz');
+    if (studySessions.length) parts.push(`背诵 ${studySessions.reduce((sum, s) => sum + sessionAnswered(s), 0)} 个`);
+    if (quizSessions.length) parts.push(`考核 ${quizSessions.reduce((sum, s) => sum + sessionAnswered(s), 0)} 题`);
+    sum.textContent = parts.join(' · ');
+
+    head.append(date, sum);
+
+    const list = document.createElement('div');
+    list.className = 'record-sessions';
+    sessions.forEach(session => list.appendChild(renderRecordItem(session)));
+
+    day.append(head, list);
+    return day;
+}
+
+function renderRecordItem(session) {
+    const wrap = document.createElement('div');
+    wrap.className = 'record-item';
+
+    const head = document.createElement('button');
+    head.type = 'button';
+    head.className = 'record-head';
+
+    const badge = document.createElement('span');
+    badge.className = `record-badge record-badge-${session.mode}`;
+    badge.textContent = session.mode === 'quiz' ? '考核' : '背诵';
+
+    const main = document.createElement('span');
+    main.className = 'record-main';
+
+    const book = document.createElement('span');
+    book.className = 'record-book';
+    book.textContent = session.bookName || '（单词本已删除）';
+
+    const meta = document.createElement('span');
+    meta.className = 'record-meta';
+    meta.textContent = sessionMetaText(session);
+
+    main.append(book, meta);
+
+    const time = document.createElement('span');
+    time.className = 'record-time';
+    time.textContent = formatClock(session.createdAt);
+
+    head.append(badge, main, time);
+
+    const words = document.createElement('div');
+    words.className = 'record-words';
+    words.hidden = true;
+
+    head.addEventListener('click', () => toggleRecordWords(session, words));
+
+    wrap.append(head, words);
+    return wrap;
+}
+
+// 明细在展开时才拉，避免一次把上千行日志全取回来
+async function toggleRecordWords(session, host) {
+    const willOpen = host.hidden;
+    host.hidden = !willOpen;
+    if (!willOpen || host.dataset.loaded) return;
+
+    host.dataset.loaded = '1';
+    host.textContent = '加载中…';
+
+    try {
+        renderSessionLogs(host, await api.wordbooks.sessionLogs(session.id), session.mode);
+    } catch (err) {
+        delete host.dataset.loaded;
+        host.textContent = err.message;
+    }
+}
+
+function renderSessionLogs(host, logs, mode) {
+    host.replaceChildren();
+
+    if (!logs.length) {
+        host.textContent = '这次没有留下单词明细';
+        return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    logs.forEach(log => {
+        const row = document.createElement('div');
+        row.className = 'record-word';
+
+        const term = document.createElement('span');
+        term.className = 'record-word-term';
+        term.textContent = log.term;
+
+        const meaning = document.createElement('span');
+        meaning.className = 'record-word-meaning';
+        meaning.textContent = log.meaning || '—';
+
+        const badge = document.createElement('span');
+        badge.className = `status-badge status-${log.result}`;
+        badge.textContent = mode === 'quiz'
+            ? (log.result === 'known' ? '答对' : '答错')
+            : STATUS_LABELS[log.result];
+
+        row.append(term, meaning, badge);
+        fragment.appendChild(row);
+    });
+
+    host.appendChild(fragment);
 }
 
 /* ---------------- 工具切换 ---------------- */
@@ -1410,10 +1699,18 @@ function cacheElements() {
     els.wordHome = $('#wordHome');
     els.wordImport = $('#wordImport');
     els.wordDetail = $('#wordDetail');
+    els.wordRecords = $('#wordRecords');
 
     els.bookList = $('#bookList');
     els.bookEmpty = $('#bookEmpty');
     els.newBookBtn = $('#newBookBtn');
+
+    els.recordsBtn = $('#recordsBtn');
+    els.recordsBack = $('#recordsBack');
+    els.recordsToday = $('#recordsToday');
+    els.recordsFilter = $('#recordsFilter');
+    els.recordList = $('#recordList');
+    els.recordsEmpty = $('#recordsEmpty');
 
     els.bookName = $('#bookName');
     els.bookText = $('#bookText');
@@ -1519,6 +1816,17 @@ function bindEvents() {
     // 新建 / 导入
     els.newBookBtn.addEventListener('click', openImport);
     els.importCancel.addEventListener('click', () => showWordView('home'));
+
+    // 学习记录
+    els.recordsBtn.addEventListener('click', openRecords);
+    els.recordsBack.addEventListener('click', () => showWordView('home'));
+    els.recordsFilter.addEventListener('click', e => {
+        const btn = e.target.closest('button[data-kind]');
+        if (!btn) return;
+        recordsState.kind = btn.dataset.kind;
+        $$('#recordsFilter button').forEach(item => item.classList.toggle('active', item === btn));
+        renderRecordList();
+    });
     els.bookText.addEventListener('input', refreshImport);
     setupUpload({
         input: els.bookFile,

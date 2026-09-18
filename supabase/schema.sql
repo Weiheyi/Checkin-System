@@ -70,6 +70,36 @@ create table if not exists public.words (
 -- 兼容已存在的旧表：记录最近一次背诵/考核的结果（known / vague / again）
 alter table public.words add column if not exists last_result text;
 
+-- 学习会话：一次完整的背诵（study）或考核（quiz），汇总当天背了多少
+create table if not exists public.study_sessions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  book_id uuid references public.wordbooks(id) on delete set null,
+  book_name text not null default '',
+  mode text not null check (mode in ('study','quiz')),
+  total int not null default 0,
+  known int not null default 0,
+  vague int not null default 0,
+  again int not null default 0,
+  correct int not null default 0,
+  wrong int not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- 逐词明细：具体背了哪些单词、每个词的结果
+-- term / meaning 做了冗余，单词被删除后记录仍然完整可读
+create table if not exists public.study_logs (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  session_id uuid not null references public.study_sessions(id) on delete cascade,
+  word_id uuid references public.words(id) on delete set null,
+  term text not null,
+  meaning text not null default '',
+  result text not null check (result in ('known','vague','again')),
+  created_at timestamptz not null default now()
+);
+
 -- ============================================================
 -- 二、好友与点赞
 -- ============================================================
@@ -101,6 +131,9 @@ create index if not exists checkin_likes_checkin_idx   on public.checkin_likes(c
 create index if not exists wordbooks_user_idx          on public.wordbooks(user_id);
 create index if not exists words_book_idx              on public.words(book_id);
 create index if not exists words_user_idx              on public.words(user_id);
+create index if not exists study_sessions_user_idx     on public.study_sessions(user_id, created_at desc);
+create index if not exists study_logs_session_idx      on public.study_logs(session_id);
+create index if not exists study_logs_user_idx         on public.study_logs(user_id, created_at desc);
 
 -- ============================================================
 -- 三、行级安全（RLS）：本人可读写，好友可读
@@ -132,6 +165,8 @@ alter table public.friendships   enable row level security;
 alter table public.checkin_likes enable row level security;
 alter table public.wordbooks     enable row level security;
 alter table public.words         enable row level security;
+alter table public.study_sessions enable row level security;
+alter table public.study_logs     enable row level security;
 
 -- profiles：本人可读写，好友可读
 drop policy if exists "profiles: own"          on public.profiles;
@@ -179,6 +214,13 @@ create policy "wordbooks: own all" on public.wordbooks for all using (auth.uid()
 drop policy if exists "words: own all" on public.words;
 create policy "words: own all" on public.words for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+-- study_sessions / study_logs：学习记录同样属于个人数据
+drop policy if exists "study_sessions: own all" on public.study_sessions;
+create policy "study_sessions: own all" on public.study_sessions for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "study_logs: own all" on public.study_logs;
+create policy "study_logs: own all" on public.study_logs for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
 -- ============================================================
 -- 四、触发器
 -- ============================================================
@@ -214,6 +256,11 @@ create trigger profiles_touch
 drop trigger if exists wordbooks_touch on public.wordbooks;
 create trigger wordbooks_touch
   before update on public.wordbooks
+  for each row execute function public.touch_updated_at();
+
+drop trigger if exists study_sessions_touch on public.study_sessions;
+create trigger study_sessions_touch
+  before update on public.study_sessions
   for each row execute function public.touch_updated_at();
 
 -- ============================================================
@@ -344,6 +391,89 @@ language sql security definer stable set search_path = public as $$
     coalesce((select max(len) from islands where grp_end >= current_date - 1), 0);
 $$;
 
+-- 开始一次背诵 / 考核，返回会话 id；前端在第一次作答时才创建，避免留下空记录
+create or replace function public.start_study_session(
+  p_mode text,
+  p_book_id uuid,
+  p_book_name text,
+  p_total int
+) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare
+  me uuid := auth.uid();
+  sid uuid;
+begin
+  if me is null then raise exception '请先登录'; end if;
+  if p_mode not in ('study','quiz') then raise exception '无效的记录类型'; end if;
+
+  insert into public.study_sessions (user_id, book_id, book_name, mode, total)
+  values (
+    me,
+    case
+      when exists (select 1 from public.wordbooks b where b.id = p_book_id and b.user_id = me)
+      then p_book_id
+      else null
+    end,
+    coalesce(p_book_name, ''),
+    p_mode,
+    greatest(coalesce(p_total, 0), 0)
+  )
+  returning id into sid;
+
+  return sid;
+end; $$;
+
+-- 记录一次背诵 / 考核结果：更新单词进度 + 写逐词明细 + 累加会话统计
+-- 返回整行而不是 returns table，避免输出参数名与 words 的列名重名，
+-- 否则 `set review_count = review_count + 1` 在 PL/pgSQL 里会因「列引用有歧义」而报错
+create or replace function public.record_word_review(
+  p_session_id uuid,
+  p_word_id uuid,
+  p_result text
+) returns setof public.words
+language plpgsql security definer set search_path = public as $$
+declare
+  me uuid := auth.uid();
+  rec public.words;
+begin
+  if me is null then raise exception '请先登录'; end if;
+  if p_result not in ('known','vague','again') then raise exception '无效的背诵结果'; end if;
+
+  update public.words
+     set review_count     = review_count + 1,
+         correct_count    = correct_count + case when p_result = 'known' then 1 else 0 end,
+         wrong_count      = wrong_count   + case when p_result = 'again' then 1 else 0 end,
+         mastery          = case p_result
+                              when 'known' then least(5, mastery + 1)
+                              when 'again' then 0
+                              else mastery
+                            end,
+         last_result      = p_result,
+         last_reviewed_at = now()
+   where id = p_word_id and user_id = me
+   returning * into rec;
+
+  if not found then raise exception '单词不存在或不属于当前用户'; end if;
+
+  -- 会话不属于本人（或创建失败）时，仍然更新单词进度，只是不记明细
+  if p_session_id is not null
+     and exists (select 1 from public.study_sessions s where s.id = p_session_id and s.user_id = me)
+  then
+    insert into public.study_logs (user_id, session_id, word_id, term, meaning, result)
+    values (me, p_session_id, rec.id, rec.term, rec.meaning, p_result);
+
+    update public.study_sessions
+       set known   = known   + case when p_result = 'known' then 1 else 0 end,
+           vague   = vague   + case when p_result = 'vague' then 1 else 0 end,
+           again   = again   + case when p_result = 'again' then 1 else 0 end,
+           correct = correct + case when p_result = 'known' then 1 else 0 end,
+           wrong   = wrong   + case when p_result = 'again' then 1 else 0 end
+     where id = p_session_id;
+  end if;
+
+  return next rec;
+end; $$;
+
 -- ============================================================
 -- 六、函数权限：只允许已登录用户调用
 -- ============================================================
@@ -353,6 +483,8 @@ revoke all on function public.add_friend_by_email(text)    from public, anon;
 revoke all on function public.friends_overview()           from public, anon;
 revoke all on function public.friend_feed(int)             from public, anon;
 revoke all on function public.my_stats()                   from public, anon;
+revoke all on function public.start_study_session(text, uuid, text, int) from public, anon;
+revoke all on function public.record_word_review(uuid, uuid, text)       from public, anon;
 
 grant execute on function public.are_friends(uuid, uuid)   to authenticated;
 grant execute on function public.can_view_checkin(uuid)    to authenticated;
@@ -360,3 +492,5 @@ grant execute on function public.add_friend_by_email(text) to authenticated;
 grant execute on function public.friends_overview()        to authenticated;
 grant execute on function public.friend_feed(int)          to authenticated;
 grant execute on function public.my_stats()                to authenticated;
+grant execute on function public.start_study_session(text, uuid, text, int) to authenticated;
+grant execute on function public.record_word_review(uuid, uuid, text)       to authenticated;

@@ -74,10 +74,29 @@
             <div id="wordHome">
                 <div class="card-title-row">
                     <h3 class="card-title">📖 我的单词本</h3>
-                    <button class="btn-ghost" id="newBookBtn" type="button">＋ 新建</button>
+                    <div class="title-actions">
+                        <button class="btn-ghost" id="recordsBtn" type="button">📅 学习记录</button>
+                        <button class="btn-ghost" id="newBookBtn" type="button">＋ 新建</button>
+                    </div>
                 </div>
                 <div id="bookList"></div>
                 <p class="empty-hint" id="bookEmpty" hidden>还没有单词本，点「新建」粘贴一份单词表就能开始了</p>
+            </div>
+
+            <!-- 视图：学习记录（按天汇总背诵 / 考核） -->
+            <div id="wordRecords" hidden>
+                <div class="card-title-row">
+                    <h3 class="card-title">📅 学习记录</h3>
+                    <button class="btn-ghost" id="recordsBack" type="button">返回</button>
+                </div>
+                <div class="word-stats" id="recordsToday"></div>
+                <div class="filter-row" id="recordsFilter">
+                    <button type="button" data-kind="all" class="active">全部</button>
+                    <button type="button" data-kind="study">背诵</button>
+                    <button type="button" data-kind="quiz">考核</button>
+                </div>
+                <div class="record-list" id="recordList"></div>
+                <p class="empty-hint" id="recordsEmpty" hidden>还没有记录，先去背几个单词吧</p>
             </div>
 
             <!-- 视图：新建 / 导入 -->

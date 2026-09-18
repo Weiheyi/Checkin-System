@@ -97,6 +97,22 @@ function mapBook(row) {
     };
 }
 
+function mapSession(row) {
+    return {
+        id: row.id,
+        book_id: row.book_id || null,
+        bookName: row.book_name || '',
+        mode: row.mode,
+        total: row.total || 0,
+        known: row.known || 0,
+        vague: row.vague || 0,
+        again: row.again || 0,
+        correct: row.correct || 0,
+        wrong: row.wrong || 0,
+        createdAt: row.created_at
+    };
+}
+
 async function getTodayCheckin(userId) {
     const { data, error } = await supabase
         .from('checkins')
@@ -488,23 +504,69 @@ export const api = {
             return {};
         },
 
-        // 背诵/考核后回写进度；调用方通常不 await，失败也不打断答题节奏
-        async saveProgress(id, { mastery, review_count, correct_count, wrong_count, last_result }) {
+        // 开始一次背诵 / 考核，返回会话 id（前端在第一次作答时才调用）
+        async startSession({ mode, bookId, bookName, total }) {
             await requireUser();
-            const { error } = await supabase
-                .from('words')
-                .update({
-                    mastery,
-                    review_count,
-                    correct_count,
-                    wrong_count,
-                    last_result,
-                    last_reviewed_at: new Date().toISOString()
-                })
-                .eq('id', id);
+            const { data, error } = await supabase.rpc('start_study_session', {
+                p_mode: mode,
+                p_book_id: bookId || null,
+                p_book_name: bookName || '',
+                p_total: total || 0
+            });
 
             if (error) fail(error.message, 500);
-            return {};
+            return data;
+        },
+
+        // 背诵/考核一次作答：服务端同时更新单词进度、写明细、累加会话统计。
+        // 返回更新后的单词进度，调用方用它覆盖本地的乐观更新。
+        async recordReview(sessionId, wordId, result) {
+            await requireUser();
+            const { data, error } = await supabase.rpc('record_word_review', {
+                p_session_id: sessionId || null,
+                p_word_id: wordId,
+                p_result: result
+            });
+
+            if (error) fail(error.message, 500);
+            return (data && data[0]) || null;
+        },
+
+        // 学习记录：最近的背诵 / 考核会话，按时间倒序
+        async records(limit = 120) {
+            await requireUser();
+            const { data, error } = await supabase
+                .from('study_sessions')
+                .select('id, book_id, book_name, mode, total, known, vague, again, correct, wrong, created_at')
+                .order('created_at', { ascending: false })
+                .limit(limit);
+
+            if (error) fail(error.message, 500);
+            return (data || []).map(mapSession);
+        },
+
+        // 单次会话的逐词明细，展开记录时才拉取；整本背诵可能上千条，分页取全
+        async sessionLogs(sessionId) {
+            await requireUser();
+            const all = [];
+
+            for (let from = 0; ; from += LOGS_PAGE_SIZE) {
+                const { data, error } = await supabase
+                    .from('study_logs')
+                    .select('id, word_id, term, meaning, result, created_at')
+                    .eq('session_id', sessionId)
+                    .order('created_at', { ascending: true })
+                    .order('id', { ascending: true })
+                    .range(from, from + LOGS_PAGE_SIZE - 1);
+
+                if (error) fail(error.message, 500);
+
+                const rows = data || [];
+                all.push(...rows);
+                if (rows.length < LOGS_PAGE_SIZE) break;
+            }
+
+            return all;
         },
 
         // 清空一本单词本的背诵进度
@@ -541,6 +603,7 @@ export const api = {
 // 单词本常有上千词，必须分页取，否则会被静默截断
 const WORDS_PAGE_SIZE = 1000;
 const WORDS_INSERT_CHUNK = 500;
+const LOGS_PAGE_SIZE = 1000;
 
 async function fetchAllWords(bookId) {
     const all = [];

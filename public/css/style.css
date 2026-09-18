@@ -2230,6 +2230,140 @@ button {
     flex-shrink: 0;
 }
 
+/* ---- 学习记录 ---- */
+.title-actions {
+    display: flex;
+    gap: var(--space-1);
+}
+
+.record-day {
+    margin-bottom: var(--space-3);
+}
+
+.record-day-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: 0 2px var(--space-2);
+}
+
+.record-date {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-strong);
+}
+
+.record-day-sum {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.record-sessions {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.record-item {
+    background: var(--bg);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.record-head {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 12px;
+    border: none;
+    background: transparent;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background var(--transition);
+}
+
+.record-head:hover {
+    background: var(--surface-soft);
+}
+
+.record-badge {
+    flex-shrink: 0;
+    padding: 3px 10px;
+    border-radius: var(--radius-pill);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-primary);
+    background: var(--color-primary-soft);
+}
+
+.record-badge-quiz {
+    color: var(--color-warning);
+    background: var(--surface-soft);
+    border: 1px solid var(--color-warning);
+}
+
+.record-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.record-book {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-strong);
+    word-break: break-word;
+}
+
+.record-meta {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.record-time {
+    flex-shrink: 0;
+    font-size: 12px;
+    color: var(--text-faint);
+}
+
+.record-words {
+    padding: 0 12px 12px;
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.record-word {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    padding: 8px 10px;
+    margin-bottom: var(--space-1);
+    background: var(--surface);
+    border-radius: var(--radius-sm);
+}
+
+.record-word:last-child {
+    margin-bottom: 0;
+}
+
+.record-word-term {
+    flex-shrink: 0;
+    font-weight: 600;
+    color: var(--text-strong);
+}
+
+.record-word-meaning {
+    flex: 1;
+    min-width: 0;
+    word-break: break-word;
+}
+
 /* ========== 响应式 ========== */
 @media (max-width: 720px) {
     .app-nav {
