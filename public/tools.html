@@ -91,9 +91,15 @@
                     <input type="text" id="bookName" maxlength="30" placeholder="例如：四级核心词汇">
                 </div>
                 <div class="form-group">
-                    <label for="bookText">粘贴单词表（每行一个）</label>
+                    <label for="bookText">粘贴单词表，或上传文件</label>
+                    <div class="upload-row">
+                        <button class="btn-ghost" id="bookFileBtn" type="button">📎 上传文件</button>
+                        <span class="upload-hint">PDF / Word / 图片，也可直接拖拽文件到下面的文本框</span>
+                        <input type="file" id="bookFile" class="file-input" multiple>
+                    </div>
                     <textarea id="bookText" class="word-textarea" spellcheck="false"
                               placeholder="支持这些格式，会自动识别：&#10;apple 苹果&#10;apple,苹果&#10;apple - 苹果&#10;apple | 苹果&#10;apple：苹果&#10;apple    苹果（Tab 分隔）&#10;1. apple 苹果"></textarea>
+                    <p class="upload-status" id="bookFileStatus" hidden></p>
                 </div>
                 <div class="import-bar">
                     <span class="import-count" id="importCount">识别到 0 个单词</span>
@@ -209,9 +215,15 @@
                         <button class="btn-ghost" id="addWordsCancel" type="button">返回</button>
                     </div>
                     <div class="form-group">
-                        <label for="addText">粘贴新的单词表</label>
+                        <label for="addText">粘贴新的单词表，或上传文件</label>
+                        <div class="upload-row">
+                            <button class="btn-ghost" id="addFileBtn" type="button">📎 上传文件</button>
+                            <span class="upload-hint">PDF / Word / 图片，也可拖拽到文本框</span>
+                            <input type="file" id="addFile" class="file-input" multiple>
+                        </div>
                         <textarea id="addText" class="word-textarea" spellcheck="false"
                                   placeholder="格式与新建时相同，会自动识别并追加到本子末尾"></textarea>
+                        <p class="upload-status" id="addFileStatus" hidden></p>
                     </div>
                     <div class="import-bar">
                         <span class="import-count" id="addCount">识别到 0 个单词</span>

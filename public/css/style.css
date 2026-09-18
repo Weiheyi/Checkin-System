@@ -1568,6 +1568,63 @@ button {
     box-shadow: var(--ring);
 }
 
+.upload-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+}
+
+.upload-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.file-input {
+    display: none;
+}
+
+/* 加载转圈默认是白色的，在浅色按钮上会看不见 */
+.btn-ghost.is-loading::after {
+    border-color: rgba(102, 126, 234, 0.3);
+    border-top-color: var(--color-primary);
+}
+
+.upload-status {
+    margin-top: var(--space-2);
+    padding: 10px 12px;
+    background: var(--bg);
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-muted);
+    word-break: break-word;
+}
+
+.upload-status.ok {
+    background: var(--color-success-soft);
+    color: var(--color-success);
+}
+
+.upload-status.error {
+    background: var(--color-danger-soft);
+    color: var(--color-danger);
+}
+
+.word-textarea.drop-target {
+    border-color: var(--color-primary);
+    box-shadow: var(--ring);
+    background: var(--color-primary-soft);
+}
+
+.btn-ghost.drop-target {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+    background: var(--color-primary-soft);
+}
+
 .import-bar {
     display: flex;
     align-items: center;

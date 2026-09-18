@@ -1,6 +1,7 @@
 import { api } from './api.js';
 import { $, $$, toast, confirmDialog, setLoading } from './ui.js';
 import { initShell } from './shell.js';
+import { extractFile, ACCEPT } from './file-extract.js';
 
 const els = {};
 const BASE_TITLE = document.title;
@@ -247,7 +248,16 @@ const HEADER_SET = new Set([
     'no', 'index', 'english', 'chinese', 'vocabulary'
 ]);
 
+// 整行就是标题时直接跳过（单独放宽 "list" 这类词会误删真正的单词）
+const HEADER_PHRASES = new Set([
+    '单词表', '词汇表', '生词表', '单词列表', '词汇列表', '英文单词', '中文释义',
+    'vocabulary list', 'word list', 'words list', 'vocabulary', 'new words'
+]);
+
 function isHeaderLine(text) {
+    const whole = text.trim().toLowerCase().replace(/\s+/g, ' ').replace(/[：:、.]+$/, '');
+    if (HEADER_PHRASES.has(whole)) return true;
+
     const tokens = text
         .split(/[\s,，:：|｜/\\\t]+/)
         .map(token => token.toLowerCase().replace(/[.、)）]+$/, ''))
@@ -1078,6 +1088,93 @@ function switchTool(name) {
     els.panelWords.classList.toggle('hidden', name !== 'words');
 }
 
+/* ---------------- 上传文件 ---------------- */
+
+function setUploadStatus(el, text, type = '') {
+    if (!text) {
+        el.hidden = true;
+        el.textContent = '';
+        return;
+    }
+    el.hidden = false;
+    el.className = `upload-status${type ? ' ' + type : ''}`;
+    el.textContent = text;
+}
+
+// 读取出来的文字追加到现有文本后面，而不是覆盖用户已经粘贴的内容
+function appendToTextarea(textarea, text) {
+    const current = textarea.value.replace(/\s+$/, '');
+    textarea.value = current ? `${current}\n${text}` : text;
+}
+
+async function readUploadedFiles(files, { status, textarea, onDone }) {
+    const parts = [];
+    const notes = [];
+    const multiple = files.length > 1;
+
+    for (const file of files) {
+        if (multiple) setUploadStatus(status, `正在读取 ${file.name}…`);
+
+        try {
+            const { text, note } = await extractFile(file, message => {
+                setUploadStatus(status, `${file.name}：${message}`);
+            });
+            if (text && text.trim()) parts.push(text.trim());
+            if (note) notes.push(`${file.name}：${note}`);
+        } catch (err) {
+            notes.push(`${file.name}：${err.message}`);
+        }
+    }
+
+    if (parts.length) {
+        appendToTextarea(textarea, parts.join('\n'));
+        onDone();
+        const summary = `已读取 ${parts.length} 个文件的内容`;
+        setUploadStatus(status, notes.length ? `${summary}（${notes.join('；')}）` : summary, notes.length ? '' : 'ok');
+    } else {
+        onDone();
+        setUploadStatus(status, notes.join('；') || '没有读取到内容', 'error');
+    }
+}
+
+function setupUpload({ input, button, status, textarea, dropEls, onDone }) {
+    input.accept = ACCEPT;
+
+    let busy = false;
+    async function run(files) {
+        if (busy || !files.length) return;
+        busy = true;
+        setLoading(button, true);
+        try {
+            await readUploadedFiles(files, { status, textarea, onDone });
+        } finally {
+            setLoading(button, false);
+            busy = false;
+        }
+    }
+
+    button.addEventListener('click', () => input.click());
+
+    input.addEventListener('change', () => {
+        const files = [...input.files];
+        input.value = '';
+        run(files);
+    });
+
+    dropEls.forEach(el => {
+        el.addEventListener('dragover', event => {
+            event.preventDefault();
+            el.classList.add('drop-target');
+        });
+        el.addEventListener('dragleave', () => el.classList.remove('drop-target'));
+        el.addEventListener('drop', event => {
+            event.preventDefault();
+            el.classList.remove('drop-target');
+            run([...((event.dataTransfer && event.dataTransfer.files) || [])]);
+        });
+    });
+}
+
 /* ---------------- 初始化 ---------------- */
 
 function cacheElements() {
@@ -1111,6 +1208,9 @@ function cacheElements() {
 
     els.bookName = $('#bookName');
     els.bookText = $('#bookText');
+    els.bookFile = $('#bookFile');
+    els.bookFileBtn = $('#bookFileBtn');
+    els.bookFileStatus = $('#bookFileStatus');
     els.importCount = $('#importCount');
     els.swapToggle = $('#swapToggle');
     els.previewToggle = $('#previewToggle');
@@ -1162,6 +1262,9 @@ function cacheElements() {
 
     els.addWordsView = $('#addWordsView');
     els.addText = $('#addText');
+    els.addFile = $('#addFile');
+    els.addFileBtn = $('#addFileBtn');
+    els.addFileStatus = $('#addFileStatus');
     els.addCount = $('#addCount');
     els.addPreviewToggle = $('#addPreviewToggle');
     els.addPreview = $('#addPreview');
@@ -1198,6 +1301,14 @@ function bindEvents() {
     els.newBookBtn.addEventListener('click', openImport);
     els.importCancel.addEventListener('click', () => showWordView('home'));
     els.bookText.addEventListener('input', refreshImport);
+    setupUpload({
+        input: els.bookFile,
+        button: els.bookFileBtn,
+        status: els.bookFileStatus,
+        textarea: els.bookText,
+        dropEls: [els.bookText, els.bookFileBtn],
+        onDone: refreshImport
+    });
     els.swapToggle.addEventListener('click', () => {
         wordsState.swap = !wordsState.swap;
         els.swapToggle.classList.toggle('active', wordsState.swap);
@@ -1274,6 +1385,14 @@ function bindEvents() {
     // 追加单词
     els.addWordsCancel.addEventListener('click', () => openDetailTab('list'));
     els.addText.addEventListener('input', refreshAdd);
+    setupUpload({
+        input: els.addFile,
+        button: els.addFileBtn,
+        status: els.addFileStatus,
+        textarea: els.addText,
+        dropEls: [els.addText, els.addFileBtn],
+        onDone: refreshAdd
+    });
     els.addPreviewToggle.addEventListener('click', () => {
         const show = els.addPreview.hidden;
         els.addPreview.hidden = !show;
