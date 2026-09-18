@@ -1378,15 +1378,6 @@ button {
     background: var(--color-primary-soft);
 }
 
-.captcha-box {
-    display: flex;
-    justify-content: center;
-}
-
-.captcha-box:empty {
-    display: none;
-}
-
 /* ========== 小游戏推广 ========== */
 .promo-card {
     display: flex;

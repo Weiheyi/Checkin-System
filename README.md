@@ -8,7 +8,7 @@
 ## 功能
 
 - 邮箱 + 密码注册登录（不依赖任何邮件流程，注册后直接可用）
-- 人机验证：登录、注册均需先通过「四则运算」快速验证，并叠加 Cloudflare Turnstile
+- 人机验证：登录、注册均需先通过「四则运算」快速验证
 - 每日打卡（每人每天一次，重复打卡会被拦截）
 - 任务管理：添加、勾选完成/取消、删除
 - 学习统计：连续天数、打卡天数、完成任务数、完成率
@@ -85,33 +85,16 @@
 这一步不能跳过：开启时 `signUp` 不会返回会话，注册后无法自动登录（页面会明确提示你回到这里关闭它）。
 关闭之后整个站点不再有任何邮件依赖，也不需要配置 SMTP。
 
-### 3. 配置人机验证（Cloudflare Turnstile）
+### 3. 填写前端配置
 
-1. 到 https://dash.cloudflare.com/?to=/:account/turnstile 新建 widget，
-   Hostnames 填入 `weiheyi.github.io` 与 `localhost`
-2. 复制 **Site Key**，填进 `public/js/config.js` 的 `TURNSTILE_SITE_KEY`
-3. 复制 **Secret Key**，填到 Supabase 的
-   **Authentication → Settings → Bot and Abuse Protection → Enable CAPTCHA protection**，
-   供应商选 Turnstile，粘贴 Secret Key 后保存
-
-> 开启后 Supabase 的**所有** Auth 请求（包括登录）都必须携带人机验证 token，
-> 因此登录表单也会出现验证组件，这是 Supabase 的设计。
->
-> 还没配好 Secret Key 时，把 `TURNSTILE_SITE_KEY` 留空即可完全不加载该组件，
-> 此时只保留「四则运算」这一层验证。
-
-### 4. 填写前端配置
-
-**Project Settings → API** 里复制两样东西，连同 Turnstile 的 Site Key 一起填进 `public/js/config.js`：
+**Project Settings → API** 里复制两样东西，填进 `public/js/config.js`：
 
 ```js
 export const SUPABASE_URL = 'https://xxxxx.supabase.co';
 export const SUPABASE_ANON_KEY = 'eyJ...';
-export const TURNSTILE_SITE_KEY = '你的 Turnstile Site Key';
 ```
 
-> `anon key` 与 Turnstile `Site Key` 设计上都是可以公开的，
-> 安全性分别由数据库的 RLS 策略和 Supabase 侧的 Secret Key 保证。
+> `anon key` 设计上就是可以公开的，安全性由数据库的 RLS 策略保证。
 > 请务必确认 `schema.sql` 里的 RLS 语句全部执行成功。
 
 ## 本地预览
@@ -145,9 +128,8 @@ npx serve public
 它由纯前端生成与校验，**只能挡住最明显的脚本提交，不是真正的安全边界**——
 攻击者绕过前端直接调用 Supabase API 即可跳过。
 
-真正的防护来自 Cloudflare Turnstile（Supabase 服务端校验）和数据库的 RLS 策略。
-四则运算的作用是给正常用户一个低成本、无需外部依赖的验证步骤，
-也能在 Turnstile 加载失败时作为兜底提示。
+真正的防护来自数据库的 RLS 策略。四则运算的作用是给正常用户一个低成本、
+无需外部依赖的验证步骤。
 
 ### 关于「背单词」的单词表识别
 
@@ -181,7 +163,7 @@ abandon vt. 放弃     词性标记会自动移到释义前
 考核还能按状态限定范围，并用「自定义题量」随机抽取指定数量的题目——
 上千词的单词本建议一次抽 50~100 题，而不是一次全考完。
 
-### 关于「排列顺序」
+### 关于「排列顺序」与分页
 
 单词的顺序由数据库里的 `words.position` 列保存，因此**导入是什么顺序，之后打开就是什么顺序**。
 
@@ -189,6 +171,9 @@ abandon vt. 放弃     词性标记会自动移到释义前
 - **单词列表页**可以随时在「文件顺序 / 字母顺序」之间切换，选择会记在本地，下次打开还是上次那样。
   这个切换只影响列表显示，不会改动已保存的顺序，也不影响背诵（背诵有独立的「随机顺序」勾选）。
 - 追加的单词总是接在本子末尾，不会插进中间。
+- 列表**分页显示**，每页可选 `20 / 50 / 100` 条（默认 50，选择会记住）。上千词的单词本也能一页一页翻到最后一个，
+  而不是只渲染前一部分。翻页、筛选、排序三者互不影响，筛选与排序会自动回到第 1 页。
+- 「全选当前」选中的是**当前筛选下的全部单词**，不只本页。
 
 > 这一版给 `words` 表加了 `position` 列，并给旧数据补了编号。
 > **必须把最新的 `supabase/schema.sql` 整段再执行一次**，否则顺序不会生效（并且会提示列不存在）。

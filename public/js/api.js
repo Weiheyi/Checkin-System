@@ -145,13 +145,12 @@ function orderedPair(idA, idB) {
 }
 
 export const api = {
-    async register({ email, nickname, password, captchaToken }) {
+    async register({ email, nickname, password }) {
         const { data, error } = await supabase.auth.signUp({
             email,
             password,
             options: {
-                data: { nickname: nickname || email.split('@')[0] },
-                captchaToken
+                data: { nickname: nickname || email.split('@')[0] }
             }
         });
 
@@ -168,11 +167,10 @@ export const api = {
         return { user };
     },
 
-    async login({ email, password, captchaToken }) {
+    async login({ email, password }) {
         const { data, error } = await supabase.auth.signInWithPassword({
             email,
-            password,
-            options: { captchaToken }
+            password
         });
         if (error) fail(translateAuthError(error), 400);
 
