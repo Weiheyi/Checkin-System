@@ -125,6 +125,13 @@
                     <button class="btn-ghost" id="swapToggle" type="button">交换中英</button>
                     <button class="btn-ghost" id="previewToggle" type="button">预览</button>
                 </div>
+                <div class="setting-row">
+                    <div class="setting-label">排列方式</div>
+                    <div class="switch-group" id="importSortGroup" role="group" aria-label="排列方式">
+                        <button type="button" data-sort="file" class="active">文件顺序</button>
+                        <button type="button" data-sort="alpha">字母顺序</button>
+                    </div>
+                </div>
                 <div class="word-preview" id="wordPreview" hidden></div>
                 <button class="btn-primary block-btn" id="importSave" type="button" disabled>保存单词本</button>
             </div>
@@ -248,6 +255,13 @@
                         <button class="btn-ghost" id="resetProgressBtn" type="button">重置进度</button>
                         <button class="btn-ghost" id="deleteBookBtn" type="button">删除本子</button>
                     </div>
+                    <div class="setting-row">
+                        <div class="setting-label">排序</div>
+                        <div class="switch-group" id="wordSortGroup" role="group" aria-label="排序方式">
+                            <button type="button" data-sort="file" class="active">文件顺序</button>
+                            <button type="button" data-sort="alpha">字母顺序</button>
+                        </div>
+                    </div>
                     <div class="filter-row" id="wordFilter">
                         <button type="button" data-filter="all" class="active">全部</button>
                         <button type="button" data-filter="new">未背</button>
@@ -285,6 +299,13 @@
                     <div class="import-bar">
                         <span class="import-count" id="addCount">识别到 0 个单词</span>
                         <button class="btn-ghost" id="addPreviewToggle" type="button">预览</button>
+                    </div>
+                    <div class="setting-row">
+                        <div class="setting-label">排列方式</div>
+                        <div class="switch-group" id="addSortGroup" role="group" aria-label="排列方式">
+                            <button type="button" data-sort="file" class="active">文件顺序</button>
+                            <button type="button" data-sort="alpha">字母顺序</button>
+                        </div>
                     </div>
                     <div class="word-preview" id="addPreview" hidden></div>
                     <button class="btn-primary block-btn" id="addSave" type="button" disabled>追加到单词本</button>

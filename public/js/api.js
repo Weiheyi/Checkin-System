@@ -76,6 +76,7 @@ function mapWord(row) {
     return {
         id: row.id,
         book_id: row.book_id,
+        position: row.position || 0,
         term: row.term,
         meaning: row.meaning || '',
         mastery: row.mastery || 0,
@@ -465,7 +466,7 @@ export const api = {
 
             if (error) fail(error.message, 500);
 
-            const inserted = await insertWords(user.id, book.id, words);
+            const inserted = await insertWords(user.id, book.id, words, 0);
             return {
                 book: { id: book.id, name: book.name, created_at: book.created_at, wordCount: inserted.length },
                 words: inserted
@@ -474,7 +475,8 @@ export const api = {
 
         async addWords(bookId, words) {
             const user = await requireUser();
-            return { words: await insertWords(user.id, bookId, words) };
+            const start = await nextWordPosition(bookId);
+            return { words: await insertWords(user.id, bookId, words, start) };
         },
 
         async rename(id, name) {
@@ -613,8 +615,8 @@ async function fetchAllWords(bookId) {
             .from('words')
             .select('*')
             .eq('book_id', bookId)
-            // 批量插入的 created_at 可能完全相同，必须再按 id 排序，分页才不会漏行或重复
-            .order('created_at', { ascending: true })
+            // 按导入时的位置排；position 在旧数据里可能重复，再按 id 兜底，分页才不会漏行或重复
+            .order('position', { ascending: true })
             .order('id', { ascending: true })
             .range(from, from + WORDS_PAGE_SIZE - 1);
 
@@ -628,14 +630,15 @@ async function fetchAllWords(bookId) {
     return all.map(mapWord);
 }
 
-async function insertWords(userId, bookId, words) {
+async function insertWords(userId, bookId, words, startPosition = 0) {
     const rows = (words || [])
         .filter(word => word && word.term)
-        .map(word => ({
+        .map((word, index) => ({
             user_id: userId,
             book_id: bookId,
             term: String(word.term).trim(),
-            meaning: String(word.meaning || '').trim()
+            meaning: String(word.meaning || '').trim(),
+            position: startPosition + index
         }));
 
     const inserted = [];
@@ -652,4 +655,18 @@ async function insertWords(userId, bookId, words) {
     }
 
     return inserted.map(mapWord);
+}
+
+// 追加时接着本子里最大的 position 往后排；即使删过词也用 max + 1，避免和已有位置重叠
+async function nextWordPosition(bookId) {
+    const { data, error } = await supabase
+        .from('words')
+        .select('position')
+        .eq('book_id', bookId)
+        .order('position', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+    if (error) fail(error.message, 500);
+    return data ? Number(data.position) + 1 : 0;
 }

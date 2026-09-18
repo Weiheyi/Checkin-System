@@ -402,6 +402,54 @@ function parseWordList(text, { swap = false } = {}) {
     return list;
 }
 
+/* ---------------- 单词排列顺序 ---------------- */
+
+// 字母序：忽略大小写，数字按数值比（unit 9 排在 unit 10 前面）
+const termCollator = new Intl.Collator('en', { sensitivity: 'base', numeric: true });
+
+function byTerm(a, b) {
+    return termCollator.compare(a.term, b.term);
+}
+
+// 导入/追加时按「排列方式」重排；file 表示保持文件里的原始顺序
+function arrangeParsed(list, mode) {
+    return mode === 'alpha' ? list.slice().sort(byTerm) : list;
+}
+
+// 列表展示排序：file 按导入时的位置，alpha 按字母
+function sortWords(list, mode) {
+    const copy = list.slice();
+    if (mode === 'alpha') copy.sort(byTerm);
+    else copy.sort((a, b) => (a.position || 0) - (b.position || 0));
+    return copy;
+}
+
+function syncSortSwitch(group, mode) {
+    if (!group) return;
+    [...group.querySelectorAll('button')].forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.sort === mode);
+    });
+}
+
+// 列表排序是个人偏好，记在本地，下次用同一台设备打开还是这个排序
+const WORD_SORT_KEY = 'checkin_word_sort';
+
+function loadListSort() {
+    try {
+        return localStorage.getItem(WORD_SORT_KEY) === 'alpha' ? 'alpha' : 'file';
+    } catch {
+        return 'file';
+    }
+}
+
+function saveListSort(mode) {
+    try {
+        localStorage.setItem(WORD_SORT_KEY, mode);
+    } catch {
+        /* 隐私模式下写不了，忽略即可 */
+    }
+}
+
 /* ---------------- 单词本 ---------------- */
 
 const wordsState = {
@@ -411,6 +459,9 @@ const wordsState = {
     parsed: [],
     addParsed: [],
     swap: false,
+    importSort: 'file',
+    addSort: 'file',
+    listSort: loadListSort(),
     filter: 'all',
     selected: new Set()
 };
@@ -576,11 +627,13 @@ function renderPreview(host, list) {
 function openImport() {
     wordsState.parsed = [];
     wordsState.swap = false;
+    wordsState.importSort = 'file';
     els.bookName.value = '';
     els.bookText.value = '';
     els.importCount.textContent = '识别到 0 个单词';
     els.importSave.disabled = true;
     els.swapToggle.classList.remove('active');
+    syncSortSwitch(els.importSortGroup, wordsState.importSort);
     els.wordPreview.hidden = true;
     els.wordPreview.replaceChildren();
     els.previewToggle.textContent = '预览';
@@ -589,7 +642,10 @@ function openImport() {
 }
 
 function refreshImport() {
-    wordsState.parsed = parseWordList(els.bookText.value, { swap: wordsState.swap });
+    wordsState.parsed = arrangeParsed(
+        parseWordList(els.bookText.value, { swap: wordsState.swap }),
+        wordsState.importSort
+    );
     els.importCount.textContent = `识别到 ${wordsState.parsed.length} 个单词`;
     els.importSave.disabled = wordsState.parsed.length === 0;
     if (!els.wordPreview.hidden) renderPreview(els.wordPreview, wordsState.parsed);
@@ -643,6 +699,7 @@ async function openBook(id) {
         wordsState.filter = 'all';
         wordsState.selected.clear();
         els.detailTitle.textContent = book.name;
+        syncSortSwitch(els.wordSortGroup, wordsState.listSort);
         renderDetailStats();
         showWordView('detail');
         openDetailTab(words.length ? 'study' : 'list');
@@ -688,7 +745,7 @@ function renderWordList() {
     renderWordFilter();
     renderSelectBar();
 
-    const visible = wordsByScope(wordsState.filter);
+    const visible = sortWords(wordsByScope(wordsState.filter), wordsState.listSort);
     const shown = visible.slice(0, WORD_RENDER_LIMIT);
 
     els.wordEmpty.hidden = visible.length > 0;
@@ -813,9 +870,11 @@ async function resetProgress() {
 
 function openAddWords() {
     wordsState.addParsed = [];
+    wordsState.addSort = 'file';
     els.addText.value = '';
     els.addCount.textContent = '识别到 0 个单词';
     els.addSave.disabled = true;
+    syncSortSwitch(els.addSortGroup, wordsState.addSort);
     els.addPreview.hidden = true;
     els.addPreview.replaceChildren();
     els.addPreviewToggle.textContent = '预览';
@@ -824,7 +883,10 @@ function openAddWords() {
 }
 
 function refreshAdd() {
-    wordsState.addParsed = parseWordList(els.addText.value, { swap: false });
+    wordsState.addParsed = arrangeParsed(
+        parseWordList(els.addText.value, { swap: false }),
+        wordsState.addSort
+    );
     els.addCount.textContent = `识别到 ${wordsState.addParsed.length} 个单词`;
     els.addSave.disabled = wordsState.addParsed.length === 0;
     if (!els.addPreview.hidden) renderPreview(els.addPreview, wordsState.addParsed);
@@ -1719,6 +1781,7 @@ function cacheElements() {
     els.bookFileStatus = $('#bookFileStatus');
     els.importCount = $('#importCount');
     els.swapToggle = $('#swapToggle');
+    els.importSortGroup = $('#importSortGroup');
     els.previewToggle = $('#previewToggle');
     els.wordPreview = $('#wordPreview');
     els.importSave = $('#importSave');
@@ -1768,6 +1831,7 @@ function cacheElements() {
     els.wordList = $('#wordList');
     els.wordEmpty = $('#wordEmpty');
     els.wordFilter = $('#wordFilter');
+    els.wordSortGroup = $('#wordSortGroup');
     els.selectCount = $('#selectCount');
     els.selectAllBtn = $('#selectAllBtn');
     els.selectClearBtn = $('#selectClearBtn');
@@ -1782,6 +1846,7 @@ function cacheElements() {
     els.addFileBtn = $('#addFileBtn');
     els.addFileStatus = $('#addFileStatus');
     els.addCount = $('#addCount');
+    els.addSortGroup = $('#addSortGroup');
     els.addPreviewToggle = $('#addPreviewToggle');
     els.addPreview = $('#addPreview');
     els.addSave = $('#addSave');
@@ -1839,6 +1904,13 @@ function bindEvents() {
     els.swapToggle.addEventListener('click', () => {
         wordsState.swap = !wordsState.swap;
         els.swapToggle.classList.toggle('active', wordsState.swap);
+        refreshImport();
+    });
+    els.importSortGroup.addEventListener('click', e => {
+        const btn = e.target.closest('button[data-sort]');
+        if (!btn) return;
+        wordsState.importSort = btn.dataset.sort;
+        syncSortSwitch(els.importSortGroup, wordsState.importSort);
         refreshImport();
     });
     els.previewToggle.addEventListener('click', () => {
@@ -1947,6 +2019,15 @@ function bindEvents() {
         wordsState.filter = btn.dataset.filter;
         renderWordList();
     });
+    // 排序切换会记住选择
+    els.wordSortGroup.addEventListener('click', e => {
+        const btn = e.target.closest('button[data-sort]');
+        if (!btn) return;
+        wordsState.listSort = btn.dataset.sort;
+        saveListSort(wordsState.listSort);
+        syncSortSwitch(els.wordSortGroup, wordsState.listSort);
+        renderWordList();
+    });
     els.selectAllBtn.addEventListener('click', selectAllVisible);
     els.selectClearBtn.addEventListener('click', clearSelection);
     els.quizSelectedBtn.addEventListener('click', quizSelected);
@@ -1968,6 +2049,13 @@ function bindEvents() {
         textarea: els.addText,
         dropEls: [els.addText, els.addFileBtn],
         onDone: refreshAdd
+    });
+    els.addSortGroup.addEventListener('click', e => {
+        const btn = e.target.closest('button[data-sort]');
+        if (!btn) return;
+        wordsState.addSort = btn.dataset.sort;
+        syncSortSwitch(els.addSortGroup, wordsState.addSort);
+        refreshAdd();
     });
     els.addPreviewToggle.addEventListener('click', () => {
         const show = els.addPreview.hidden;

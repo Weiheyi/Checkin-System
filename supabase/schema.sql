@@ -70,6 +70,21 @@ create table if not exists public.words (
 -- 兼容已存在的旧表：记录最近一次背诵/考核的结果（known / vague / again）
 alter table public.words add column if not exists last_result text;
 
+-- 兼容已存在的旧表：单词在单词本里的排列位置（导入时的先后，从 0 开始）
+alter table public.words add column if not exists position int not null default 0;
+
+-- 旧数据补编号：按现有的 created_at / id 顺序编一遍。
+-- 不做这一步的话，旧词的 position 全是 0，之后追加的新词会和它们的位置重叠。
+update public.words w
+   set position = t.rn
+  from (
+    select id, (row_number() over (partition by book_id order by created_at, id) - 1) as rn
+      from public.words
+  ) t
+ where w.id = t.id
+   and w.position = 0
+   and t.rn > 0;
+
 -- 学习会话：一次完整的背诵（study）或考核（quiz），汇总当天背了多少
 create table if not exists public.study_sessions (
   id uuid primary key default gen_random_uuid(),
@@ -131,6 +146,7 @@ create index if not exists checkin_likes_checkin_idx   on public.checkin_likes(c
 create index if not exists wordbooks_user_idx          on public.wordbooks(user_id);
 create index if not exists words_book_idx              on public.words(book_id);
 create index if not exists words_user_idx              on public.words(user_id);
+create index if not exists words_book_pos_idx          on public.words(book_id, position);
 create index if not exists study_sessions_user_idx     on public.study_sessions(user_id, created_at desc);
 create index if not exists study_logs_session_idx      on public.study_logs(session_id);
 create index if not exists study_logs_user_idx         on public.study_logs(user_id, created_at desc);
