@@ -1,7 +1,9 @@
 # Auto detect text files and perform LF normalization
 * text=auto
 
-# 第三方库与 OCR 模型：保持原样，不做换行符转换，避免损坏或产生无意义 diff
+# 第三方库与数据文件：保持原样，不做换行符转换，避免损坏或产生无意义 diff
 public/vendor/tesseract-lang/* binary
 public/vendor/tesseract-core-simd-lstm.wasm.js -text
 public/vendor/*.mjs -text
+# 音标词典是逐行解析的，务必保持 LF
+public/vendor/ipa/en_US.txt -text

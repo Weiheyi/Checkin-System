@@ -2,6 +2,7 @@ import { api } from './api.js';
 import { $, $$, toast, confirmDialog, setLoading } from './ui.js';
 import { initShell } from './shell.js';
 import { extractFile, ACCEPT } from './file-extract.js';
+import { phoneticOf, loadPhonetics, phoneticsReady, speak, warmUpVoices } from './phonetic.js';
 
 const els = {};
 const BASE_TITLE = document.title;
@@ -671,6 +672,7 @@ function renderSelectBar() {
 }
 
 function renderWordList() {
+    ensurePhonetics();
     renderWordFilter();
     renderSelectBar();
 
@@ -704,11 +706,20 @@ function renderWordList() {
         term.className = 'word-term';
         term.textContent = word.term;
 
+        main.appendChild(term);
+
+        const ipa = phoneticOf(word.term);
+        if (ipa) {
+            const phonetic = document.createElement('div');
+            phonetic.className = 'word-phonetic';
+            phonetic.textContent = ipa;
+            main.appendChild(phonetic);
+        }
+
         const meaning = document.createElement('div');
         meaning.className = 'word-meaning';
         meaning.textContent = word.meaning || '—';
-
-        main.append(term, meaning);
+        main.appendChild(meaning);
 
         const status = wordStatus(word);
         const badge = document.createElement('span');
@@ -826,6 +837,46 @@ async function saveAddWords() {
     }
 }
 
+/* ---------------- 音标与发音 ---------------- */
+
+let phoneticsRequested = false;
+
+// 音标词典约 2.9MB，打开单词本后再后台加载；没加载完就先不显示音标
+function ensurePhonetics() {
+    if (phoneticsReady() || phoneticsRequested) return;
+    phoneticsRequested = true;
+
+    loadPhonetics()
+        .then(() => {
+            paintStudyPhonetic();
+            if (!els.listView.hidden) renderWordList();
+        })
+        .catch(() => {
+            // 词典加载失败就静默降级：没有音标，但发音和背诵都照常
+        });
+}
+
+function paintStudyPhonetic() {
+    const word = currentStudyWord();
+    const ipa = word ? phoneticOf(word.term) : '';
+    els.studyPhonetic.textContent = ipa;
+    els.studyPhonetic.hidden = !ipa;
+}
+
+function makeSpeakButton(text) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'speak-btn';
+    btn.textContent = '🔊';
+    btn.title = '朗读（美音）';
+    btn.setAttribute('aria-label', '朗读（美音）');
+    btn.addEventListener('click', event => {
+        event.stopPropagation();
+        if (!speak(text)) toast('当前浏览器不支持语音朗读', 'error');
+    });
+    return btn;
+}
+
 /* ---------------- 背诵 ---------------- */
 
 function startStudy() {
@@ -838,6 +889,8 @@ function startStudy() {
         renderSummary(els.studySummary, [], '这个本子还没有单词');
         return;
     }
+
+    ensurePhonetics();
 
     study.queue = words.slice();
     if (els.studyShuffle.checked) shuffle(study.queue);
@@ -866,6 +919,10 @@ function renderStudy() {
     els.studyActions.hidden = true;
     els.studyProgress.textContent = `${study.index + 1} / ${study.queue.length}`;
     els.studyCard.classList.remove('revealed');
+
+    paintStudyPhonetic();
+
+    if (els.studyAutoSpeak.checked) speak(word.term);
 }
 
 function revealStudy() {
@@ -1089,7 +1146,22 @@ function resolveQuizAnswer(question, correct, given) {
 
     els.quizFeedback.hidden = false;
     els.quizFeedback.className = `quiz-feedback ${correct ? 'ok' : 'no'}`;
-    els.quizFeedback.textContent = correct ? '答对了！' : `答错了，正确答案：${question.answer}`;
+    els.quizFeedback.replaceChildren();
+
+    const message = document.createElement('span');
+    message.textContent = correct ? '答对了！' : `答错了，正确答案：${question.answer}`;
+    els.quizFeedback.appendChild(message);
+
+    // 作答后才显示音标与发音，免得拼写题被直接提示答案
+    const ipa = phoneticOf(question.word.term);
+    if (ipa) {
+        const phonetic = document.createElement('span');
+        phonetic.className = 'inline-phonetic';
+        phonetic.textContent = ipa;
+        els.quizFeedback.appendChild(phonetic);
+    }
+    els.quizFeedback.appendChild(makeSpeakButton(question.word.term));
+
     renderQuizProgress();
 
     els.quizNext.hidden = false;
@@ -1370,6 +1442,9 @@ function cacheElements() {
     els.studySummary = $('#studySummary');
     els.studyRestart = $('#studyRestart');
     els.studyShuffle = $('#studyShuffle');
+    els.studyAutoSpeak = $('#studyAutoSpeak');
+    els.studyPhonetic = $('#studyPhonetic');
+    els.studySpeak = $('#studySpeak');
 
     els.quizView = $('#quizView');
     els.quizSetup = $('#quizSetup');
@@ -1491,6 +1566,20 @@ function bindEvents() {
     els.studyRestart.addEventListener('click', startStudy);
     els.studyShuffle.addEventListener('change', startStudy);
 
+    els.studySpeak.addEventListener('click', event => {
+        event.stopPropagation();
+        const word = currentStudyWord();
+        if (word && !speak(word.term)) toast('当前浏览器不支持语音朗读', 'error');
+    });
+    // 不拦下来的话，Enter / 空格会冒泡到卡片，被当成「翻开释义」
+    els.studySpeak.addEventListener('keydown', event => event.stopPropagation());
+
+    els.studyAutoSpeak.addEventListener('change', () => {
+        if (!els.studyAutoSpeak.checked) return;
+        const word = currentStudyWord();
+        if (word) speak(word.term);
+    });
+
     // 考核
     els.quizTypeGroup.addEventListener('click', e => {
         const btn = e.target.closest('button[data-type]');
@@ -1586,6 +1675,7 @@ async function init() {
     bindEvents();
     renderTimer();
     renderCountdown();
+    warmUpVoices();
 
     try {
         wordsState.books = await api.wordbooks.list();

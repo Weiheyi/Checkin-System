@@ -130,6 +130,11 @@
                     <div class="study-progress" id="studyProgress"></div>
                     <div class="study-card" id="studyCard" role="button" tabindex="0">
                         <div class="study-term" id="studyTerm">—</div>
+                        <div class="study-phonetic-row">
+                            <span class="study-phonetic" id="studyPhonetic"></span>
+                            <button class="speak-btn" id="studySpeak" type="button"
+                                    aria-label="朗读单词（美音）" title="朗读（美音）">🔊</button>
+                        </div>
                         <div class="study-meaning" id="studyMeaning" hidden></div>
                         <div class="study-tip" id="studyTip">点击卡片查看释义</div>
                     </div>
@@ -144,6 +149,10 @@
                         <label class="check-inline">
                             <input type="checkbox" id="studyShuffle">
                             <span>随机顺序</span>
+                        </label>
+                        <label class="check-inline">
+                            <input type="checkbox" id="studyAutoSpeak">
+                            <span>自动发音</span>
                         </label>
                     </div>
                 </div>

@@ -1797,6 +1797,61 @@ button {
     color: var(--text-faint);
 }
 
+.study-phonetic-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    margin-top: var(--space-1);
+    min-height: 34px;
+}
+
+.study-phonetic {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 16px;
+    color: var(--text-muted);
+    word-break: break-word;
+}
+
+.speak-btn {
+    flex-shrink: 0;
+    width: 34px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: 50%;
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.speak-btn:hover {
+    border-color: var(--color-primary);
+    background: var(--color-primary-soft);
+}
+
+.speak-btn:active {
+    transform: scale(0.94);
+}
+
+.inline-phonetic {
+    margin-left: var(--space-2);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+}
+
+.word-phonetic {
+    margin-top: 2px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    color: var(--text-muted);
+    word-break: break-word;
+}
+
 .study-actions {
     display: grid;
     grid-template-columns: repeat(3, 1fr);

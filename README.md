@@ -17,6 +17,7 @@
 - 个人中心：头像 / 昵称 / 签名、个人数据总览、修改密码
 - 学习工具：计时器、倒计时（到点响铃）
 - 背单词：粘贴单词表、或上传 PDF / Word / 图片自动提取文字，识别后背诵与考核
+- 音标与发音：每个单词自动配美音音标，点 🔊 可听美式发音（离线）
 - 界面：暗色模式（浅色 / 深色 / 跟随系统）、移动端底部导航
 
 ## 技术栈
@@ -45,7 +46,8 @@
     │   ├── pdf.worker.min.mjs
     │   ├── mammoth.browser.min.js # Word(.docx) 解析
     │   ├── tesseract*.js          # 图片 OCR 引擎
-    │   └── tesseract-lang/        # OCR 中文识别包
+    │   ├── tesseract-lang/        # OCR 中文识别包
+    │   └── ipa/                   # 美音音标词典（125,927 条）
     └── js/
         ├── config.js              # ← Supabase 地址与 anon key 填这里
         ├── supabase.js            # 客户端初始化
@@ -59,6 +61,7 @@
         ├── dashboard.js           # 主页逻辑
         ├── tools.js               # 工具页逻辑（含单词表识别解析）
         ├── file-extract.js        # 上传文件 → 文本（PDF / Word / 图片 OCR）
+        ├── phonetic.js            # 音标查询与美音朗读
         ├── friends.js             # 好友页逻辑
         └── profile.js             # 个人中心逻辑
 ```
@@ -175,6 +178,21 @@ abandon vt. 放弃     词性标记会自动移到释义前
 每行右侧显示最近一次的结果；勾选若干单词后点「考核选中」即可只考这些词。
 考核还能按状态限定范围，并用「自定义题量」随机抽取指定数量的题目——
 上千词的单词本建议一次抽 50~100 题，而不是一次全考完。
+
+### 关于音标与美音发音
+
+背诵卡片、单词列表和考核反馈里都会显示音标，点 🔊 即可朗读（美音）。
+考核里刻意**作答后**才显示音标，否则拼写题等于直接给答案。
+
+- **音标**取自本地词典 `public/vendor/ipa/en_US.txt`（125,927 条，约 2.9MB），
+  打开单词本时后台加载一次，之后完全离线。词典未收录的词（多为生僻词，
+  实测约 5%，如 ineluctable、fecund）只是不显示音标，不影响其他功能。
+- **发音**用浏览器内置的语音合成（`speechSynthesis`），优先挑美音语音，
+  实测会选中 Microsoft Zira / David 或 Google US English，零依赖、零延迟。
+  若系统没有英文语音则不会朗读，点 🔊 会给出提示。
+- 背诵页可勾选「自动发音」，翻到下一个词时自动朗读。
+- 音标数据来自 [ipa-dict](https://github.com/open-dict-data/ipa-dict)（MIT License），
+  详见 `public/vendor/ipa/README.md`。
 
 ### 关于「背单词」的文件上传
 
