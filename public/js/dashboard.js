@@ -179,7 +179,7 @@ async function handleCheckIn() {
         state.checkin = checkin;
         state.tasks = [];
         renderTasks();
-        toast('打卡成功，继续加油！', 'success');
+        toast('打卡成功！累了就去玩个小游戏放松一下吧 🎮', 'success');
         await refreshSummary();
     } catch (err) {
         toast(err.message, 'error');
