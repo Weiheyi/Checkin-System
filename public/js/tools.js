@@ -490,7 +490,7 @@ const WORD_RENDER_LIMIT = 300;
 
 // 最近一次背诵/考核的结果
 const STATUS_LABELS = { known: '认识', vague: '模糊', again: '不认识', new: '未背' };
-const FILTER_LABELS = { all: '全部', new: '未背', known: '认识', vague: '模糊', again: '不认识' };
+const FILTER_LABELS = { all: '全部', wrong: '错词', new: '未背', known: '认识', vague: '模糊', again: '不认识' };
 
 // mastery 记录的是「连续答对（认识）次数」，答错一次清零。
 // 连续答对 2 次就记为已掌握；原来要求 3 次，配上上千词的词库几乎永远到不了 0 之外的数字。
@@ -500,9 +500,16 @@ function wordStatus(word) {
     return word.last_result && STATUS_LABELS[word.last_result] ? word.last_result : 'new';
 }
 
+// 错词：答错过、且还没「消灭」（达到连续答对 MASTERY_TARGET 次）。
+// 判定完全复用现有熟练度，不需要新增数据库字段。
+function isWrongWord(word) {
+    return word.wrong_count > 0 && word.mastery < MASTERY_TARGET;
+}
+
 function wordsByScope(scope) {
     const all = wordsState.words;
     if (scope === 'all') return all;
+    if (scope === 'wrong') return all.filter(isWrongWord);
     if (scope === 'new') return all.filter(word => !word.last_result);
     return all.filter(word => word.last_result === scope);
 }
@@ -569,6 +576,7 @@ function renderDetailStats() {
         statItem('✅', stats.mastered, '已掌握', `连续答对 ${MASTERY_TARGET} 次即视为掌握`),
         statItem('🎯', `${stats.rate}%`, '正确率')
     );
+    updateWrongTabLabel();
 }
 
 function statItem(icon, value, label, hint = '') {
@@ -713,18 +721,21 @@ function openDetailTab(view) {
     els.studyView.hidden = view !== 'study';
     els.quizView.hidden = view !== 'quiz';
     els.listView.hidden = view !== 'list';
+    els.wrongView.hidden = view !== 'wrong';
     els.addWordsView.hidden = view !== 'add';
     $$('#detailTabs button').forEach(btn => btn.classList.toggle('active', btn.dataset.view === view));
 
     if (view === 'study') startStudy();
     else if (view === 'quiz') resetQuizSetup();
     else if (view === 'list') renderWordList();
+    else if (view === 'wrong') renderWrongTab();
 }
 
 function renderWordFilter() {
-    const counts = { all: wordsState.words.length, new: 0, known: 0, vague: 0, again: 0 };
+    const counts = { all: wordsState.words.length, wrong: 0, new: 0, known: 0, vague: 0, again: 0 };
     wordsState.words.forEach(word => {
         counts[wordStatus(word)] += 1;
+        if (isWrongWord(word)) counts.wrong += 1;
     });
 
     $$('#wordFilter button').forEach(btn => {
@@ -1023,7 +1034,7 @@ function markStudy(mark) {
     }
     word.review_count += 1;
     word.last_result = mark;
-    logReview('study', word, mark);
+    logReview('study', study, word, mark, study.queue.length);
 
     study.result[mark] += 1;
     study.index += 1;
@@ -1310,6 +1321,302 @@ function finishQuiz() {
     renderDetailStats();
 }
 
+/* ---------------- 消灭错词 ---------------- */
+
+// 错词 = 答错过、且还没连续答对 MASTERY_TARGET 次的词（复用「已掌握」的判定）。
+// 灭错就是反复练这些词：答对一次熟练度 +1，达标即从错词池消失；答错清零并排回队尾。
+const elim = {
+    type: 'choice',
+    queue: [],
+    total: 0,
+    current: null,
+    answered: false,
+    sessionPromise: null,
+    warned: false
+};
+
+function wrongWordStats() {
+    const wrong = wordsState.words.filter(word => word.wrong_count > 0);
+    const pending = wrong.filter(isWrongWord);
+    return {
+        pending,
+        cleared: wrong.length - pending.length,
+        misses: wordsState.words.reduce((sum, word) => sum + word.wrong_count, 0)
+    };
+}
+
+// 灭错题必须有释义才出得来，缺释义的错词只能先跳过
+function elimPool() {
+    return wordsState.words.filter(word => isWrongWord(word) && word.term && word.meaning);
+}
+
+function usableWords() {
+    return wordsState.words.filter(word => word.term && word.meaning);
+}
+
+function updateWrongTabLabel() {
+    if (!els.wrongTab) return;
+    const { pending } = wrongWordStats();
+    els.wrongTab.textContent = pending.length ? `错词 ${pending.length}` : '错词';
+}
+
+function syncElimType() {
+    $$('#elimTypeGroup button').forEach(btn => btn.classList.toggle('active', btn.dataset.type === elim.type));
+}
+
+function resetElimRun() {
+    els.wrongSetup.hidden = false;
+    els.wrongRun.hidden = true;
+    els.wrongDone.hidden = true;
+    els.wrongDone.replaceChildren();
+}
+
+function renderWrongTab() {
+    resetElimRun();
+    syncElimType();
+    refreshWrongStats();
+}
+
+function refreshWrongStats() {
+    const { pending, cleared, misses } = wrongWordStats();
+
+    els.wrongStats.replaceChildren(
+        statItem('🎯', pending.length, '待消灭', `答错过、还没连续答对 ${MASTERY_TARGET} 次的单词`),
+        statItem('✅', cleared, '已消灭'),
+        statItem('📉', misses, '累计答错')
+    );
+    updateWrongTabLabel();
+
+    const drillable = pending.filter(word => word.term && word.meaning).length;
+    const missing = pending.length - drillable;
+
+    if (!wordsState.words.length) {
+        els.wrongHint.textContent = '这个本子还没有单词，先导入一份单词表吧。';
+        els.wrongStart.disabled = true;
+    } else if (!pending.length) {
+        els.wrongHint.textContent = '这个本子的错词已经全部消灭，继续保持～';
+        els.wrongStart.disabled = true;
+    } else if (!drillable) {
+        els.wrongHint.textContent = '待消灭的错词都没有释义，补上释义后就能出题了。';
+        els.wrongStart.disabled = true;
+    } else {
+        const notes = [`共 ${drillable} 个待消灭的错词，连续答对 ${MASTERY_TARGET} 次即消灭。`];
+        if (missing) notes.push(`另有 ${missing} 个错词没有释义，已跳过。`);
+        if (elim.type === 'choice' && usableWords().length < 4) {
+            notes.push('带释义的单词不足 4 个，请改用「拼写」。');
+        }
+        els.wrongHint.textContent = notes.join(' ');
+        els.wrongStart.disabled = false;
+    }
+}
+
+function startElim() {
+    const pool = elimPool();
+    if (!pool.length) return toast('没有待消灭的错词', 'error');
+    if (elim.type === 'choice' && usableWords().length < 4) {
+        return toast('带释义的单词不足 4 个，无法生成选择题，请改用「拼写」', 'error');
+    }
+
+    elim.queue = shuffle(pool.slice());
+    elim.total = elim.queue.length;
+    elim.current = null;
+    elim.answered = false;
+    elim.sessionPromise = null;
+    elim.warned = false;
+
+    els.wrongSetup.hidden = true;
+    els.wrongDone.hidden = true;
+    els.wrongRun.hidden = false;
+    renderElimQuestion();
+}
+
+function buildElimQuestion(word) {
+    if (elim.type === 'spell') {
+        return { word, kind: 'spell', prompt: word.meaning, sub: '根据释义拼写单词', answer: word.term };
+    }
+
+    const answer = word.meaning;
+    const distractors = shuffle(usableWords().filter(w => w.id !== word.id && w.meaning !== answer))
+        .slice(0, 3)
+        .map(w => w.meaning);
+
+    return {
+        word,
+        kind: 'choice',
+        prompt: word.term,
+        sub: '选择正确的释义',
+        answer,
+        options: shuffle([answer, ...distractors])
+    };
+}
+
+function renderElimProgress() {
+    const remaining = elim.queue.length;
+    els.wrongProgress.textContent = `剩余 ${remaining} 个 · 已消灭 ${elim.total - remaining} / ${elim.total}`;
+}
+
+function renderElimQuestion() {
+    const word = elim.queue[0];
+    if (!word) return finishElim();
+
+    const question = buildElimQuestion(word);
+    elim.current = question;
+    elim.answered = false;
+
+    renderElimProgress();
+    els.wrongFeedback.hidden = true;
+    els.wrongNext.hidden = true;
+    els.wrongOptions.replaceChildren();
+    els.wrongPrompt.textContent = question.prompt;
+    els.wrongSub.textContent = question.sub;
+
+    const choice = question.kind === 'choice';
+    els.wrongOptions.hidden = !choice;
+    els.wrongSpell.hidden = choice;
+
+    if (choice) {
+        question.options.forEach(option => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'quiz-option';
+            btn.textContent = option;
+            btn.addEventListener('click', () => answerElimChoice(question, btn, option));
+            els.wrongOptions.appendChild(btn);
+        });
+    } else {
+        els.wrongInput.value = '';
+        els.wrongInput.disabled = false;
+        els.wrongSubmit.disabled = false;
+        els.wrongInput.focus();
+    }
+}
+
+function answerElimChoice(question, btn, value) {
+    if (elim.answered) return;
+    elim.answered = true;
+
+    $$('.quiz-option', els.wrongOptions).forEach(el => {
+        el.disabled = true;
+        if (el.textContent === question.answer) el.classList.add('correct');
+        else if (el === btn) el.classList.add('wrong');
+    });
+
+    resolveElimAnswer(question, value === question.answer);
+}
+
+function submitElimSpell() {
+    const question = elim.current;
+    if (!question || question.kind !== 'spell' || elim.answered) return;
+
+    const value = els.wrongInput.value.trim();
+    if (!value) return toast('请输入答案', 'error');
+
+    elim.answered = true;
+    els.wrongInput.disabled = true;
+    els.wrongSubmit.disabled = true;
+
+    resolveElimAnswer(question, value.toLowerCase() === question.answer.trim().toLowerCase());
+}
+
+function resolveElimAnswer(question, correct) {
+    const word = question.word;
+    applyElimResult(word, correct);
+
+    // 答对并达到「连续答对」门槛才算消灭，否则排到队尾继续练
+    const eliminated = correct && word.mastery >= MASTERY_TARGET;
+    elim.queue.shift();
+    if (!eliminated) elim.queue.push(word);
+
+    els.wrongFeedback.hidden = false;
+    els.wrongFeedback.className = `quiz-feedback ${correct ? 'ok' : 'no'}`;
+    els.wrongFeedback.replaceChildren();
+
+    const message = document.createElement('span');
+    if (!correct) message.textContent = `答错了，正确答案：${question.answer}`;
+    else if (eliminated) message.textContent = '已消灭！';
+    else message.textContent = `答对了，熟练度 ${word.mastery} / ${MASTERY_TARGET}，再连对一次就消灭`;
+    els.wrongFeedback.appendChild(message);
+
+    const ipa = phoneticOf(word.term);
+    if (ipa) {
+        const phonetic = document.createElement('span');
+        phonetic.className = 'inline-phonetic';
+        phonetic.textContent = ipa;
+        els.wrongFeedback.appendChild(phonetic);
+    }
+    els.wrongFeedback.appendChild(makeSpeakButton(word.term));
+
+    renderElimProgress();
+    refreshWrongStats();
+
+    els.wrongNext.hidden = false;
+    els.wrongNext.textContent = elim.queue.length ? '下一题' : '查看结果';
+    els.wrongNext.focus();
+}
+
+function nextElim() {
+    if (!elim.answered) return;
+    if (!elim.queue.length) finishElim();
+    else renderElimQuestion();
+}
+
+function finishElim() {
+    const cleared = elim.total - elim.queue.length;
+    const { pending } = wrongWordStats();
+    const rest = elimPool();
+
+    els.wrongRun.hidden = true;
+    els.wrongDone.hidden = false;
+    els.wrongDone.replaceChildren();
+
+    renderSummary(els.wrongDone, [
+        ['本轮消灭', cleared],
+        ['待消灭', pending.length]
+    ], pending.length ? '本轮结束' : '🎉 错词全部消灭！');
+
+    const actions = document.createElement('div');
+    actions.className = 'timer-actions';
+
+    const back = document.createElement('button');
+    back.type = 'button';
+    back.className = rest.length ? 'btn-ghost' : 'btn-primary';
+    back.textContent = '返回设置';
+    back.addEventListener('click', () => {
+        resetElimRun();
+        refreshWrongStats();
+    });
+    actions.appendChild(back);
+
+    // 还有可练的错词才给「继续消灭」，否则点了也是空跑
+    if (rest.length) {
+        const again = document.createElement('button');
+        again.type = 'button';
+        again.className = 'btn-primary';
+        again.textContent = '继续消灭';
+        again.addEventListener('click', startElim);
+        actions.prepend(again);
+    }
+
+    els.wrongDone.appendChild(actions);
+
+    refreshWrongStats();
+    renderDetailStats();
+}
+
+function applyElimResult(word, correct) {
+    word.review_count += 1;
+    if (correct) {
+        word.correct_count += 1;
+        word.mastery = Math.min(5, word.mastery + 1);
+        word.last_result = 'known';
+    } else {
+        word.wrong_count += 1;
+        word.mastery = 0;
+        word.last_result = 'again';
+    }
+    logReview('quiz', elim, word, correct ? 'known' : 'again', elim.total);
+}
+
 /* ---------------- 共用 ---------------- */
 
 // 记录写入失败只提示一次，避免每答一题弹一次
@@ -1321,18 +1628,12 @@ function warnRecordFailure(state, message) {
 
 // 一次作答 → 写学习记录（会话 id 懒创建，同一轮复用）
 // 进度与记录都不是关键路径：不 await，失败也不打断背诵/答题节奏
-function logReview(mode, word, result) {
-    const state = mode === 'quiz' ? quiz : study;
+function logReview(mode, state, word, result, total) {
     const book = wordsState.current;
 
     if (!state.sessionPromise) {
         state.sessionPromise = api.wordbooks
-            .startSession({
-                mode,
-                bookId: book && book.id,
-                bookName: book && book.name,
-                total: mode === 'quiz' ? quiz.questions.length : study.queue.length
-            })
+            .startSession({ mode, bookId: book && book.id, bookName: book && book.name, total })
             // 建会话失败也要能记单词进度，只是这一轮不会有明细
             .catch(err => {
                 warnRecordFailure(state, `学习记录写入失败：${err.message}（单词进度仍会保存）`);
@@ -1344,6 +1645,9 @@ function logReview(mode, word, result) {
         .then(sessionId => api.wordbooks.recordReview(sessionId, word.id, result))
         .then(row => {
             if (!row) return;
+            // 同一轮里同一个词可能被反复作答（灭错会把它排回队尾），
+            // 旧请求的响应可能后到；按作答次数丢弃过期结果，别把熟练度覆盖回去
+            if (row.review_count < word.review_count) return;
             // 熟练度由服务端计算，用返回值覆盖本地的乐观更新
             word.mastery = row.mastery;
             word.review_count = row.review_count;
@@ -1365,7 +1669,7 @@ function applyQuizResult(word, correct) {
         word.mastery = 0;
         word.last_result = 'again';
     }
-    logReview('quiz', word, correct ? 'known' : 'again');
+    logReview('quiz', quiz, word, correct ? 'known' : 'again', quiz.questions.length);
 }
 
 function renderSummary(host, items, titleText) {
@@ -1827,6 +2131,26 @@ function cacheElements() {
     els.quizNext = $('#quizNext');
     els.quizResult = $('#quizResult');
 
+    els.wrongTab = $('#detailTabs button[data-view="wrong"]');
+    els.wrongView = $('#wrongView');
+    els.wrongSetup = $('#wrongSetup');
+    els.wrongStats = $('#wrongStats');
+    els.wrongHint = $('#wrongHint');
+    els.elimTypeGroup = $('#elimTypeGroup');
+    els.wrongStart = $('#wrongStart');
+    els.wrongRun = $('#wrongRun');
+    els.wrongProgress = $('#wrongProgress');
+    els.wrongPrompt = $('#wrongPrompt');
+    els.wrongSub = $('#wrongSub');
+    els.wrongOptions = $('#wrongOptions');
+    els.wrongSpell = $('#wrongSpell');
+    els.wrongInput = $('#wrongInput');
+    els.wrongSubmit = $('#wrongSubmit');
+    els.wrongFeedback = $('#wrongFeedback');
+    els.wrongNext = $('#wrongNext');
+    els.wrongQuit = $('#wrongQuit');
+    els.wrongDone = $('#wrongDone');
+
     els.listView = $('#listView');
     els.wordList = $('#wordList');
     els.wordEmpty = $('#wordEmpty');
@@ -2011,6 +2335,22 @@ function bindEvents() {
         if (e.key === 'Enter') submitSpell();
     });
     els.quizNext.addEventListener('click', nextQuestion);
+
+    // 消灭错词
+    els.elimTypeGroup.addEventListener('click', e => {
+        const btn = e.target.closest('button[data-type]');
+        if (!btn) return;
+        elim.type = btn.dataset.type;
+        syncElimType();
+        refreshWrongStats();
+    });
+    els.wrongStart.addEventListener('click', startElim);
+    els.wrongSubmit.addEventListener('click', submitElimSpell);
+    els.wrongInput.addEventListener('keydown', e => {
+        if (e.key === 'Enter') submitElimSpell();
+    });
+    els.wrongNext.addEventListener('click', nextElim);
+    els.wrongQuit.addEventListener('click', finishElim);
 
     // 单词列表：状态筛选与勾选
     els.wordFilter.addEventListener('click', e => {

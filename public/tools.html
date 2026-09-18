@@ -149,6 +149,7 @@
                     <button type="button" data-view="study" class="active">背诵</button>
                     <button type="button" data-view="quiz">考核</button>
                     <button type="button" data-view="list">单词</button>
+                    <button type="button" data-view="wrong">错词</button>
                 </div>
 
                 <!-- 背诵 -->
@@ -264,6 +265,7 @@
                     </div>
                     <div class="filter-row" id="wordFilter">
                         <button type="button" data-filter="all" class="active">全部</button>
+                        <button type="button" data-filter="wrong">错词</button>
                         <button type="button" data-filter="new">未背</button>
                         <button type="button" data-filter="known">认识</button>
                         <button type="button" data-filter="vague">模糊</button>
@@ -277,6 +279,45 @@
                     </div>
                     <ul class="word-list" id="wordList"></ul>
                     <p class="empty-hint" id="wordEmpty" hidden>这个本子还没有单词</p>
+                </div>
+
+                <!-- 消灭错词 -->
+                <div id="wrongView" hidden>
+                    <div class="word-stats" id="wrongStats"></div>
+
+                    <div id="wrongSetup">
+                        <div class="setting-row">
+                            <div class="setting-label">题型</div>
+                            <div class="switch-group" id="elimTypeGroup">
+                                <button type="button" data-type="choice" class="active">选择</button>
+                                <button type="button" data-type="spell">拼写</button>
+                            </div>
+                        </div>
+                        <button class="btn-primary block-btn" id="wrongStart" type="button">开始消灭错词</button>
+                        <p class="setting-desc" id="wrongHint"></p>
+                    </div>
+
+                    <div class="quiz-run" id="wrongRun" hidden>
+                        <div class="study-progress" id="wrongProgress"></div>
+                        <div class="study-card quiz-card" id="wrongCard">
+                            <div class="study-term" id="wrongPrompt">—</div>
+                            <div class="study-tip" id="wrongSub"></div>
+                        </div>
+                        <div class="quiz-options" id="wrongOptions"></div>
+                        <div class="quiz-spell" id="wrongSpell" hidden>
+                            <input type="text" class="task-input" id="wrongInput" autocomplete="off"
+                                   autocapitalize="off" autocorrect="off" spellcheck="false"
+                                   placeholder="输入对应的单词后回车">
+                            <button class="add-task-btn" id="wrongSubmit" type="button">提交</button>
+                        </div>
+                        <div class="quiz-feedback" id="wrongFeedback" hidden></div>
+                        <button class="btn-primary block-btn" id="wrongNext" type="button" hidden>下一题</button>
+                        <div class="timer-actions">
+                            <button class="btn-ghost" id="wrongQuit" type="button">结束本轮</button>
+                        </div>
+                    </div>
+
+                    <div class="quiz-result" id="wrongDone" hidden></div>
                 </div>
 
                 <!-- 追加单词 -->
