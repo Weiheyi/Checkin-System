@@ -777,12 +777,17 @@ function renderSelectBar() {
     els.quizSelectedBtn.disabled = size === 0;
 }
 
+// 当前筛选 + 排序下的完整单词列表（分页之前的）
+function visibleWords() {
+    return sortWords(wordsByScope(wordsState.filter), wordsState.listSort);
+}
+
 function renderWordList() {
     ensurePhonetics();
     renderWordFilter();
     renderSelectBar();
 
-    const visible = sortWords(wordsByScope(wordsState.filter), wordsState.listSort);
+    const visible = visibleWords();
     const { start, end, pages } = pageRange(visible.length);
     const shown = visible.slice(start, end);
 
@@ -892,8 +897,11 @@ function goToPage(page) {
     }
 }
 
-function selectAllVisible() {
-    wordsByScope(wordsState.filter).forEach(word => wordsState.selected.add(word.id));
+// 只选中当前这一页显示的单词，不是整个筛选结果
+function selectCurrentPage() {
+    const visible = visibleWords();
+    const { start, end } = pageRange(visible.length);
+    visible.slice(start, end).forEach(word => wordsState.selected.add(word.id));
     renderWordList();
 }
 
@@ -2730,7 +2738,7 @@ function bindEvents() {
         if (Number.isFinite(typed) && typed >= 1 && typed !== wordsState.page) jumpToTypedPage();
         else els.pageJump.value = String(wordsState.page);
     });
-    els.selectAllBtn.addEventListener('click', selectAllVisible);
+    els.selectAllBtn.addEventListener('click', selectCurrentPage);
     els.selectClearBtn.addEventListener('click', clearSelection);
     els.quizSelectedBtn.addEventListener('click', quizSelected);
 
