@@ -28,15 +28,45 @@
     <div class="container">
         <div id="appShell"></div>
 
-        <div class="segmented" id="toolTabs" role="tablist" aria-label="工具切换">
-            <button type="button" data-tool="timer" class="active">⏱ 计时器</button>
-            <button type="button" data-tool="countdown">⏳ 倒计时</button>
-            <button type="button" data-tool="words">📖 背单词</button>
-            <button type="button" data-tool="dict">🔤 字典</button>
+        <!-- 进入工具页先只列功能名，不自动打开某个工具 -->
+        <div class="card" id="toolHome">
+            <h3 class="card-title">学习工具</h3>
+            <div class="tool-grid">
+                <button type="button" class="tool-card" data-tool="timer">
+                    <span class="tool-icon">⏱</span>
+                    <span class="tool-name">计时器</span>
+                    <span class="tool-desc">正计时、计次</span>
+                </button>
+                <button type="button" class="tool-card" data-tool="countdown">
+                    <span class="tool-icon">⏳</span>
+                    <span class="tool-name">倒计时</span>
+                    <span class="tool-desc">到点响铃提醒</span>
+                </button>
+                <button type="button" class="tool-card" data-tool="words">
+                    <span class="tool-icon">📖</span>
+                    <span class="tool-name">背单词</span>
+                    <span class="tool-desc">单词本、背诵与考核</span>
+                </button>
+                <button type="button" class="tool-card" data-tool="dict">
+                    <span class="tool-icon">🔤</span>
+                    <span class="tool-name">字典</span>
+                    <span class="tool-desc">离线音标与中文释义</span>
+                </button>
+            </div>
+        </div>
+
+        <div id="toolNav" hidden>
+            <button class="btn-ghost tool-back" id="toolBack" type="button">← 全部工具</button>
+            <div class="segmented" id="toolTabs" role="tablist" aria-label="工具切换">
+                <button type="button" data-tool="timer">⏱ 计时器</button>
+                <button type="button" data-tool="countdown">⏳ 倒计时</button>
+                <button type="button" data-tool="words">📖 背单词</button>
+                <button type="button" data-tool="dict">🔤 字典</button>
+            </div>
         </div>
 
         <!-- ========== 计时器 ========== -->
-        <section class="card tool-panel" id="panel-timer">
+        <section class="card tool-panel hidden" id="panel-timer">
             <div class="timer-display" id="timerDisplay">00:00:00</div>
             <p class="timer-hint" id="timerHint">点「开始」开始计时</p>
             <div class="timer-actions">
@@ -206,6 +236,7 @@
                         <div class="setting-row">
                             <div class="setting-label">范围</div>
                             <div class="switch-group switch-wrap" id="quizScopeGroup">
+                                <button type="button" data-scope="selected" hidden>选中</button>
                                 <button type="button" data-scope="all" class="active">全部</button>
                                 <button type="button" data-scope="new">未背</button>
                                 <button type="button" data-scope="known">认识</button>
@@ -227,12 +258,23 @@
                             <input type="number" class="text-input quiz-size-input" id="quizSizeInput"
                                    min="1" max="9999" inputmode="numeric" placeholder="留空按上方题量">
                         </div>
+                        <div class="setting-row">
+                            <div class="setting-label">限时</div>
+                            <div class="switch-group" id="quizLimitGroup">
+                                <button type="button" data-limit="0" class="active">不限时</button>
+                                <button type="button" data-limit="10">每题 10 秒</button>
+                            </div>
+                        </div>
                         <button class="btn-primary block-btn" id="quizStart" type="button">开始考核</button>
                         <p class="setting-desc" id="quizSetupHint"></p>
                     </div>
 
                     <div class="quiz-run" id="quizRun" hidden>
                         <div class="study-progress" id="quizProgress"></div>
+                        <div class="quiz-timing">
+                            <span class="quiz-elapsed" id="quizElapsed">⏱ 00:00:00</span>
+                            <span class="quiz-countdown" id="quizCountdown" hidden></span>
+                        </div>
                         <div class="study-card quiz-card" id="quizCard">
                             <div class="study-term" id="quizPrompt">—</div>
                             <div class="study-tip" id="quizSub"></div>

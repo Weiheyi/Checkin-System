@@ -473,6 +473,25 @@ function savePageSize(size) {
     }
 }
 
+// 考核限时：默认不限时（可选功能，不强制），选择记在本地
+const QUIZ_LIMIT_KEY = 'checkin_quiz_limit';
+
+function loadQuizLimit() {
+    try {
+        return Number(localStorage.getItem(QUIZ_LIMIT_KEY)) === 10 ? 10 : 0;
+    } catch {
+        return 0;
+    }
+}
+
+function saveQuizLimit(seconds) {
+    try {
+        localStorage.setItem(QUIZ_LIMIT_KEY, String(seconds));
+    } catch {
+        /* 隐私模式下写不了，忽略即可 */
+    }
+}
+
 /* ---------------- 单词本 ---------------- */
 
 const wordsState = {
@@ -498,10 +517,19 @@ const study = { queue: [], index: 0, revealed: false, result: { known: 0, vague:
 const quiz = {
     type: 'choice',
     dir: 'term',
+    // 'selected' 表示范围用「考核选中」挑出来的那批词
     scope: 'all',
     size: 10,
     customSize: 0,
-    // 「考核选中」时直接指定词池，优先级高于 scope
+    // 自定义题量是不是「考核选中」自动填的：是的话，取消选中时一并清掉
+    customFromSelection: false,
+    // 每题限时（秒），0 = 不限时；默认不限时
+    limitSeconds: loadQuizLimit(),
+    // 计时状态：开考时间 / 本题截止时间 / 刷新定时器
+    startedAt: 0,
+    questionEndsAt: 0,
+    timerId: null,
+    // 「考核选中」挑出来的词池，scope 为 selected 时使用
     override: null,
     questions: [],
     index: 0,
@@ -525,16 +553,27 @@ function wordStatus(word) {
     return word.last_result && STATUS_LABELS[word.last_result] ? word.last_result : 'new';
 }
 
-// 错词：答错过、且还没「消灭」（达到连续答对 MASTERY_TARGET 次）。
+// 答错过（不管后来有没有消灭）
+function hasWrong(word) {
+    return word.wrong_count > 0;
+}
+
+// 待消灭的错词：答错过、且还没「消灭」（达到连续答对 MASTERY_TARGET 次）。
 // 判定完全复用现有熟练度，不需要新增数据库字段。
 function isWrongWord(word) {
-    return word.wrong_count > 0 && word.mastery < MASTERY_TARGET;
+    return hasWrong(word) && word.mastery < MASTERY_TARGET;
+}
+
+// 已消灭的错词：答错过，但已经连续答对到掌握。列表里照样显示，只是标记出来
+function isClearedWrong(word) {
+    return hasWrong(word) && word.mastery >= MASTERY_TARGET;
 }
 
 function wordsByScope(scope) {
     const all = wordsState.words;
     if (scope === 'all') return all;
-    if (scope === 'wrong') return all.filter(isWrongWord);
+    // 「错词」= 所有答错过的词，包含已消灭的，免得消灭之后再也看不到
+    if (scope === 'wrong') return all.filter(hasWrong);
     if (scope === 'new') return all.filter(word => !word.last_result);
     return all.filter(word => word.last_result === scope);
 }
@@ -734,6 +773,7 @@ async function openBook(id) {
         wordsState.selected.clear();
         // 「考核选中」的词池属于上一本书，换本子就作废
         quiz.override = null;
+        if (quiz.scope === 'selected') quiz.scope = 'all';
         els.detailTitle.textContent = book.name;
         syncSortSwitch(els.wordSortGroup, wordsState.listSort);
         renderDetailStats();
@@ -753,6 +793,9 @@ function openDetailTab(view) {
     els.addWordsView.hidden = view !== 'add';
     $$('#detailTabs button').forEach(btn => btn.classList.toggle('active', btn.dataset.view === view));
 
+    // 离开考核页就停表，别在后台空转
+    if (view !== 'quiz') stopQuizTimer();
+
     if (view === 'study') startStudy();
     else if (view === 'quiz') resetQuizSetup();
     else if (view === 'list') renderWordList();
@@ -763,7 +806,7 @@ function renderWordFilter() {
     const counts = { all: wordsState.words.length, wrong: 0, new: 0, known: 0, vague: 0, again: 0 };
     wordsState.words.forEach(word => {
         counts[wordStatus(word)] += 1;
-        if (isWrongWord(word)) counts.wrong += 1;
+        if (hasWrong(word)) counts.wrong += 1;
     });
 
     $$('#wordFilter button').forEach(btn => {
@@ -847,7 +890,15 @@ function renderWordList() {
         del.setAttribute('aria-label', `删除单词 ${word.term}`);
         del.addEventListener('click', () => removeWord(word));
 
-        li.append(check, main, badge, del);
+        li.append(check, main, badge);
+        // 答错过的词被消灭后依然留在「错词」里，标一下状态，免得看不到
+        if (isClearedWrong(word)) {
+            const cleared = document.createElement('span');
+            cleared.className = 'status-badge status-cleared';
+            cleared.textContent = '已消灭';
+            li.appendChild(cleared);
+        }
+        li.appendChild(del);
         fragment.appendChild(li);
     });
 
@@ -1140,20 +1191,39 @@ const POS_HEAD_RE = /^(?:n|v|vt|vi|adj|adv|prep|pron|conj|num|art|int|interj|aux
 const SENSE_SEP_RE = /[；;，,、|｜/]+/;
 
 function normalizeSense(text) {
-    return String(text)
+    const s = String(text)
+        // 释义里的换行是字面 \n（反斜杠 + n），先换成空格，别让它退化成字母 n
+        .replace(/\\r\\n|\\n|\\r/g, ' ')
         .replace(BRACKET_RE, ' ')
         .replace(POS_HEAD_RE, '')
         .replace(/[\s\u3000]+/g, '')
         .replace(/[.。·:：;；,，、!！?？"'“”‘’`~()（）\[\]【】{}<>《》/\\|｜\-–—_+@#$%^&*=]/g, '')
         .toLowerCase();
+    // 「无所不在的」≈「无所不在」：只削一个字的词尾，且削完至少还剩两个字
+    return s.length >= 3 && /[的地得]$/.test(s) ? s.slice(0, -1) : s;
 }
 
-// 一个释义常有好几个义项（「放弃；抛弃」），拆开逐个比对
+// 一个释义常有好几个义项（「放弃；抛弃」），拆开逐个比对；
+// 字面 \n 的分行也当成义项分隔
 function meaningSenses(meaning) {
     return String(meaning || '')
+        .replace(/\\r\\n|\\n|\\r/g, '；')
         .split(SENSE_SEP_RE)
         .map(normalizeSense)
         .filter(Boolean);
+}
+
+// 参考答案 = 单词本里写的释义 + 本地词典里同一个词的释义。
+// 用户导入的释义常常只是词典里的一条，把词典里的其它义项也算对，能明显减少误判。
+function answerSenses(meaning, term) {
+    const list = meaningSenses(meaning);
+    if (term && dictReady()) list.push(...meaningSenses(meaningOf(term)));
+    return [...new Set(list)];
+}
+
+// 填义判分要把本地词典当参考答案用，开考前先在后台热一下（只需加载一次）
+function warmUpDictionary() {
+    if (!dictReady()) loadDictionary().catch(() => {});
 }
 
 // 最长公共子序列长度，用来容忍个别字的出入
@@ -1172,35 +1242,130 @@ function commonLength(a, b) {
     return prev[n];
 }
 
-// 填义判分：与任一义项完全一致、互相包含，或高度相似即算对。
-// 中文答案写法多样，只做「是否答对」的近似判断，判错时另有手动纠正入口。
-function judgeMeaning(input, meaning) {
+// 填义判分：命中任一参考答案即算对。判定由严到宽：
+// 完全一致 → 互相包含 → 高度相似（公共子序列 ≥ 80%）→ 长释义只差一字 / 同字异序。
+// 中文写法多样，这只是近似判断：判错时另有「我答对了」入口可手动纠正。
+function judgeMeaning(input, meaning, term) {
     const user = normalizeSense(input);
     if (!user) return false;
 
-    return meaningSenses(meaning).some(sense => {
+    return answerSenses(meaning, term).some(sense => {
         if (sense === user) return true;
+
         // 单字太容易误判（「是」「的」），只认完全一致
         const shorter = Math.min(user.length, sense.length);
         if (shorter < 2) return false;
+
+        // 互相包含：「苹果」对「苹果树」，「苹果公司」对「苹果」
         if (sense.includes(user) || user.includes(sense)) return true;
-        return commonLength(user, sense) / shorter >= 0.8;
+
+        const common = commonLength(user, sense);
+        if (common / shorter >= 0.8) return true;
+
+        // 长一点的释义，只差一个字也算「意思差不多」
+        if (shorter >= 3 && common >= shorter - 1) return true;
+
+        // 同字异序（如 变化无常 / 无常变化）：用字基本重合、字数也接近
+        const a = new Set(user);
+        const b = new Set(sense);
+        const shared = [...a].filter(c => b.has(c)).length;
+        return shared / Math.max(a.size, b.size) >= 0.8 && Math.abs(user.length - sense.length) <= 1;
     });
 }
 
 /* ---------------- 考核 ---------------- */
 
 function resetQuizSetup() {
+    stopQuizTimer();
     els.quizSetup.hidden = false;
     els.quizRun.hidden = true;
     els.quizResult.hidden = true;
+    syncQuizScope();
+    syncQuizSize();
+    syncQuizLimit();
     updateQuizHint();
 }
 
-// 当前范围里可参与考核的单词（override 优先，来自「考核选中」）
+// 范围按钮的选中态；「选中」只在真正挑了词时才出现，文案带上数量
+function syncQuizScope() {
+    const count = quiz.override ? quiz.override.length : 0;
+    els.quizScopeSelected.hidden = count === 0;
+    els.quizScopeSelected.textContent = count ? `选中 ${count}` : '选中';
+    $$('#quizScopeGroup button').forEach(btn => btn.classList.toggle('active', btn.dataset.scope === quiz.scope));
+}
+
+// 题量按钮的选中态：填了自定义题量时，上方的预设都不高亮
+function syncQuizSize() {
+    $$('#quizSizeGroup button').forEach(btn => {
+        btn.classList.toggle('active', quiz.customSize === 0 && Number(btn.dataset.size) === quiz.size);
+    });
+}
+
+function syncQuizLimit() {
+    $$('#quizLimitGroup button').forEach(btn => {
+        btn.classList.toggle('active', (Number(btn.dataset.limit) || 0) === quiz.limitSeconds);
+    });
+}
+
+/* ---- 考核计时 / 限时 ---- */
+
+function quizElapsedMs() {
+    return quiz.startedAt ? Date.now() - quiz.startedAt : 0;
+}
+
+function startQuizTimer() {
+    stopQuizTimer();
+    quiz.startedAt = Date.now();
+    quiz.timerId = setInterval(tickQuizTimer, 200);
+    tickQuizTimer();
+}
+
+function stopQuizTimer() {
+    clearInterval(quiz.timerId);
+    quiz.timerId = null;
+}
+
+function tickQuizTimer() {
+    els.quizElapsed.textContent = `⏱ ${formatHMS(quizElapsedMs())}`;
+
+    // 不限时的话只需要总用时
+    if (!quiz.limitSeconds) return;
+
+    const left = quiz.questionEndsAt - Date.now();
+    const seconds = Math.max(0, Math.ceil(left / 1000));
+    els.quizCountdown.textContent = `剩 ${seconds} 秒`;
+    els.quizCountdown.classList.toggle('danger', seconds <= 3);
+
+    if (left <= 0 && !quiz.answered) timeUpQuizQuestion();
+}
+
+// 单题超时：直接按答错落账（时间到了就不给「我答对了」的机会了）
+function timeUpQuizQuestion() {
+    const question = quiz.questions[quiz.index];
+    if (!question || quiz.answered) return;
+
+    quiz.answered = true;
+    quiz.pending = null;
+    els.quizOverride.hidden = true;
+
+    if (question.kind === 'choice') {
+        $$('.quiz-option', els.quizOptions).forEach(el => {
+            el.disabled = true;
+            if (el.textContent === question.answer) el.classList.add('correct');
+        });
+    } else {
+        els.quizInput.disabled = true;
+        els.quizSubmit.disabled = true;
+    }
+
+    commitQuizAnswer(question, false, '（超时）');
+    renderAnswerFeedback(question, false, true);
+}
+
+// 当前范围里可参与考核的单词；scope 为 selected 时用「考核选中」挑出来的词池
 function quizPool() {
-    const source = quiz.override || wordsByScope(quiz.scope);
-    return source.filter(word => word.term && word.meaning);
+    if (quiz.scope === 'selected') return (quiz.override || []).filter(word => word.term && word.meaning);
+    return wordsByScope(quiz.scope).filter(word => word.term && word.meaning);
 }
 
 function quizLimit(poolSize) {
@@ -1213,9 +1378,9 @@ function updateQuizHint() {
     const picked = quizLimit(pool.length);
     const notes = [];
 
-    if (quiz.override) {
-        notes.push(`已从「单词」页选中 ${quiz.override.length} 个单词，随机抽 ${picked} 题。`);
-        notes.push('选好题型与题量后点「开始考核」；改动上面的「范围」会取消这次选中。');
+    if (quiz.scope === 'selected') {
+        notes.push(`范围是「考核选中」挑出的 ${(quiz.override || []).length} 个单词，本次考核 ${picked} 题。`);
+        notes.push('改动上面的「范围」会取消这次选中。');
     } else {
         notes.push(`本子共 ${wordsState.words.length} 个单词，「${FILTER_LABELS[quiz.scope]}」范围内 ${pool.length} 个可考核，随机抽 ${picked} 题。`);
     }
@@ -1227,6 +1392,8 @@ function updateQuizHint() {
     } else if (quiz.type === 'meaning') {
         notes.push('填义题按中文意思自动判分，判错时可点「我答对了，算对」纠正。');
     }
+
+    if (quiz.limitSeconds) notes.push(`每题限时 ${quiz.limitSeconds} 秒，超时按答错计。`);
 
     els.quizSetupHint.textContent = notes.join(' ');
 }
@@ -1275,16 +1442,19 @@ function startQuiz() {
     quiz.wrong = [];
     quiz.answered = false;
     quiz.pending = null;
+    quiz.questionEndsAt = 0;
     quiz.sessionPromise = null;
     quiz.warned = false;
 
     els.quizSetup.hidden = true;
     els.quizResult.hidden = true;
     els.quizRun.hidden = false;
+    if (quiz.type === 'meaning') warmUpDictionary();
+    startQuizTimer();
     renderQuizQuestion();
 }
 
-// 从「单词」列表勾选后，跳到考核设置页；由用户选好题型 / 题量再手动点「开始考核」
+// 从「单词」列表勾选后跳到考核设置页：范围自动切到「选中」，题量默认就等于选中数量
 function quizSelected() {
     const usable = wordsState.words
         .filter(word => wordsState.selected.has(word.id))
@@ -1293,7 +1463,12 @@ function quizSelected() {
     if (!usable.length) return toast('选中的单词都没有释义，无法考核', 'error');
 
     quiz.override = usable;
-    // openDetailTab('quiz') 会回到设置页并刷新提示（这里刻意不直接开考）
+    quiz.scope = 'selected';
+    quiz.customSize = usable.length;
+    quiz.customFromSelection = true;
+    els.quizSizeInput.value = String(usable.length);
+
+    // openDetailTab('quiz') 会回到设置页并刷新范围 / 题量 / 提示（这里刻意不直接开考）
     openDetailTab('quiz');
 }
 
@@ -1314,6 +1489,15 @@ function renderQuizQuestion() {
     els.quizOverride.hidden = true;
     els.quizNext.hidden = true;
     els.quizOptions.replaceChildren();
+
+    // 限时：每一题单独起算；不限时就只显示总用时
+    if (quiz.limitSeconds) {
+        quiz.questionEndsAt = Date.now() + quiz.limitSeconds * 1000;
+        els.quizCountdown.hidden = false;
+    } else {
+        els.quizCountdown.hidden = true;
+    }
+    tickQuizTimer();
 
     const choice = question.kind === 'choice';
     els.quizOptions.hidden = !choice;
@@ -1363,7 +1547,7 @@ function submitTyped() {
     // 填义题：自动判对就直接计入；判错先不落账，留一次手动纠正的机会
     if (question.kind === 'meaning') {
         quiz.answered = true;
-        if (judgeMeaning(value, question.answer)) {
+        if (judgeMeaning(value, question.answer, question.word.term)) {
             resolveQuizAnswer(question, true, value);
         } else {
             quiz.pending = { question, given: value };
@@ -1392,13 +1576,18 @@ function commitQuizAnswer(question, correct, given) {
     }
 }
 
-function renderAnswerFeedback(question, correct) {
+function renderAnswerFeedback(question, correct, timedOut = false) {
+    els.quizCountdown.hidden = true;
     els.quizFeedback.hidden = false;
     els.quizFeedback.className = `quiz-feedback ${correct ? 'ok' : 'no'}`;
     els.quizFeedback.replaceChildren();
 
     const message = document.createElement('span');
-    message.textContent = correct ? '答对了！' : `答错了，正确答案：${question.answer}`;
+    message.textContent = correct
+        ? '答对了！'
+        : timedOut
+            ? `超时了，正确答案：${question.answer}`
+            : `答错了，正确答案：${question.answer}`;
     els.quizFeedback.appendChild(message);
 
     // 作答后才显示音标与发音，免得拼写题被直接提示答案
@@ -1447,14 +1636,17 @@ function nextQuestion() {
 function finishQuiz() {
     const total = quiz.questions.length;
     const rate = total ? Math.round((quiz.correct / total) * 100) : 0;
+    const used = formatHMS(quizElapsedMs());
 
+    stopQuizTimer();
     els.quizRun.hidden = true;
     els.quizResult.hidden = false;
     renderSummary(els.quizResult, [
         ['答对', quiz.correct],
         ['答错', quiz.wrong.length],
-        ['正确率', `${rate}%`]
-    ], `考核完成，得分 ${rate} 分`);
+        ['正确率', `${rate}%`],
+        ['用时', used]
+    ], `考核完成，得分 ${rate} 分 · 用时 ${used}`);
 
     if (quiz.wrong.length) {
         const list = document.createElement('div');
@@ -1575,7 +1767,7 @@ function refreshWrongStats() {
         els.wrongHint.textContent = '这个本子还没有单词，先导入一份单词表吧。';
         els.wrongStart.disabled = true;
     } else if (!pending.length) {
-        els.wrongHint.textContent = '这个本子的错词已经全部消灭，继续保持～';
+        els.wrongHint.textContent = '这个本子的错词已经全部消灭，继续保持～（消灭过的词仍然能在「单词」页的「错词」筛选里看到）';
         els.wrongStart.disabled = true;
     } else if (!drillable) {
         els.wrongHint.textContent = '待消灭的错词都没有释义，补上释义后就能出题了。';
@@ -1612,6 +1804,7 @@ function startElim() {
     els.wrongSetup.hidden = true;
     els.wrongDone.hidden = true;
     els.wrongRun.hidden = false;
+    if (elim.type === 'meaning') warmUpDictionary();
     renderElimQuestion();
 }
 
@@ -1708,7 +1901,7 @@ function submitElimTyped() {
     // 填义题：自动判对就直接计入；判错先不落账，留一次手动纠正的机会
     if (question.kind === 'meaning') {
         elim.answered = true;
-        if (judgeMeaning(value, question.answer)) {
+        if (judgeMeaning(value, question.answer, question.word.term)) {
             resolveElimAnswer(question, true);
         } else {
             elim.pending = { question, given: value };
@@ -2256,8 +2449,14 @@ function speakDictWord() {
 
 /* ---------------- 工具切换 ---------------- */
 
+// 传 null 回到「只列四个功能」的首页
 function switchTool(name) {
+    const home = !name;
+
+    els.toolHome.hidden = !home;
+    els.toolNav.hidden = home;
     $$('#toolTabs button').forEach(btn => btn.classList.toggle('active', btn.dataset.tool === name));
+
     els.panelTimer.classList.toggle('hidden', name !== 'timer');
     els.panelCountdown.classList.toggle('hidden', name !== 'countdown');
     els.panelWords.classList.toggle('hidden', name !== 'words');
@@ -2363,6 +2562,9 @@ function setupUpload({ input, button, status, textarea, dropEls, onDone }) {
 
 function cacheElements() {
     els.toolTabs = $('#toolTabs');
+    els.toolHome = $('#toolHome');
+    els.toolNav = $('#toolNav');
+    els.toolBack = $('#toolBack');
     els.panelTimer = $('#panel-timer');
     els.panelCountdown = $('#panel-countdown');
     els.panelWords = $('#panel-words');
@@ -2440,8 +2642,12 @@ function cacheElements() {
     els.quizTypeGroup = $('#quizTypeGroup');
     els.quizDirGroup = $('#quizDirGroup');
     els.quizScopeGroup = $('#quizScopeGroup');
+    els.quizScopeSelected = $('#quizScopeGroup button[data-scope="selected"]');
     els.quizSizeGroup = $('#quizSizeGroup');
     els.quizSizeInput = $('#quizSizeInput');
+    els.quizLimitGroup = $('#quizLimitGroup');
+    els.quizElapsed = $('#quizElapsed');
+    els.quizCountdown = $('#quizCountdown');
     els.quizStart = $('#quizStart');
     els.quizRun = $('#quizRun');
     els.quizProgress = $('#quizProgress');
@@ -2515,6 +2721,11 @@ function bindEvents() {
         const btn = e.target.closest('button[data-tool]');
         if (btn) switchTool(btn.dataset.tool);
     });
+    els.toolHome.addEventListener('click', e => {
+        const btn = e.target.closest('button[data-tool]');
+        if (btn) switchTool(btn.dataset.tool);
+    });
+    els.toolBack.addEventListener('click', () => switchTool(null));
 
     // 离线字典
     els.dictInput.addEventListener('input', renderDictResult);
@@ -2641,10 +2852,17 @@ function bindEvents() {
     });
     els.quizScopeGroup.addEventListener('click', e => {
         const btn = e.target.closest('button[data-scope]');
-        if (!btn) return;
+        if (!btn || btn.hidden) return;
         quiz.scope = btn.dataset.scope;
-        quiz.override = null;
-        $$('#quizScopeGroup button').forEach(item => item.classList.toggle('active', item === btn));
+        if (quiz.scope !== 'selected') quiz.override = null;
+        // 「考核选中」自动填的题量，取消选中时一并清掉，免得给新范围留一个隐形上限
+        if (quiz.customFromSelection && quiz.scope !== 'selected') {
+            quiz.customFromSelection = false;
+            quiz.customSize = 0;
+            els.quizSizeInput.value = '';
+        }
+        syncQuizScope();
+        syncQuizSize();
         updateQuizHint();
     });
     els.quizSizeGroup.addEventListener('click', e => {
@@ -2652,18 +2870,24 @@ function bindEvents() {
         if (!btn) return;
         quiz.size = Number(btn.dataset.size);
         quiz.customSize = 0;
+        quiz.customFromSelection = false;
         els.quizSizeInput.value = '';
-        $$('#quizSizeGroup button').forEach(item => item.classList.toggle('active', item === btn));
+        syncQuizSize();
         updateQuizHint();
     });
     els.quizSizeInput.addEventListener('input', () => {
         const value = Math.floor(Number(els.quizSizeInput.value));
         quiz.customSize = value > 0 ? value : 0;
-
-        // 自定义优先；清空后回到上方选中的题量
-        $$('#quizSizeGroup button').forEach(item => {
-            item.classList.toggle('active', quiz.customSize === 0 && Number(item.dataset.size) === quiz.size);
-        });
+        quiz.customFromSelection = false;
+        syncQuizSize();
+        updateQuizHint();
+    });
+    els.quizLimitGroup.addEventListener('click', e => {
+        const btn = e.target.closest('button[data-limit]');
+        if (!btn) return;
+        quiz.limitSeconds = Number(btn.dataset.limit) || 0;
+        saveQuizLimit(quiz.limitSeconds);
+        syncQuizLimit();
         updateQuizHint();
     });
     els.quizStart.addEventListener('click', startQuiz);

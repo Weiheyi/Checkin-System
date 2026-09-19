@@ -699,7 +699,7 @@ button {
     flex: 1;
     font-size: 15px;
     color: var(--text);
-    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 .task-item.completed .task-text {
@@ -851,7 +851,7 @@ button {
     font-size: 15px;
     color: var(--text);
     margin-bottom: var(--space-3);
-    word-break: break-word;
+    overflow-wrap: break-word;
     white-space: pre-wrap;
 }
 
@@ -1528,6 +1528,55 @@ button {
     color: var(--color-primary);
 }
 
+/* ========== 工具页：功能选择 ========== */
+.tool-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+}
+
+.tool-card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: var(--space-3);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    font-family: inherit;
+    text-align: left;
+    color: var(--text);
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.tool-card:hover {
+    border-color: var(--color-primary);
+    background: var(--color-primary-soft);
+}
+
+.tool-icon {
+    font-size: 22px;
+    line-height: 1.2;
+}
+
+.tool-name {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-strong);
+}
+
+.tool-desc {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.tool-back {
+    margin-bottom: var(--space-2);
+}
+
 /* ========== 工具页：背单词 ========== */
 .block-btn {
     display: block;
@@ -1591,7 +1640,7 @@ button {
     font-size: 13px;
     line-height: 1.6;
     color: var(--text-muted);
-    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 .upload-status.ok {
@@ -1663,12 +1712,12 @@ button {
     max-width: 45%;
     font-weight: 600;
     color: var(--text-strong);
-    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 .preview-meaning {
     color: var(--text-muted);
-    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 .preview-meaning.empty {
@@ -1711,7 +1760,7 @@ button {
     font-weight: 600;
     font-size: 15px;
     color: var(--text-strong);
-    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 .book-sub {
@@ -1771,7 +1820,7 @@ button {
     font-weight: 700;
     line-height: 1.3;
     color: var(--text-strong);
-    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 .study-meaning {
@@ -1779,7 +1828,7 @@ button {
     font-size: 17px;
     line-height: 1.6;
     color: var(--text);
-    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 .study-tip {
@@ -1801,7 +1850,7 @@ button {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size: 16px;
     color: var(--text-muted);
-    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 .speak-btn {
@@ -1840,7 +1889,7 @@ button {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size: 12px;
     color: var(--text-muted);
-    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 .study-actions {
@@ -1915,7 +1964,7 @@ button {
 
 .summary-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
     gap: var(--space-2);
 }
 
@@ -1950,6 +1999,25 @@ button {
 
 .quiz-card .study-term {
     font-size: 24px;
+}
+
+.quiz-timing {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-3);
+    margin-bottom: var(--space-2);
+    font-size: 13px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.quiz-countdown {
+    font-weight: 700;
+}
+
+.quiz-countdown.danger {
+    color: var(--color-danger);
 }
 
 .quiz-options {
@@ -2037,17 +2105,20 @@ button {
 }
 
 .wrong-prompt {
-    flex: 1;
-    min-width: 0;
+    /* 题干（单词/释义）不被右边的答案压扁，但也不占满整行 */
+    flex-shrink: 0;
+    max-width: 55%;
     color: var(--text);
-    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 .wrong-answer {
-    flex-shrink: 0;
+    flex: 1;
+    min-width: 0;
+    text-align: right;
     font-weight: 600;
     color: var(--color-success);
-    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 /* ---- 单词列表 ---- */
@@ -2081,14 +2152,14 @@ button {
     font-size: 15px;
     font-weight: 600;
     color: var(--text-strong);
-    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 .word-meaning {
     margin-top: 2px;
     font-size: 13px;
     color: var(--text-muted);
-    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 .word-check {
@@ -2125,6 +2196,12 @@ button {
     color: var(--color-danger);
     border-color: var(--color-danger);
     background: var(--color-danger-soft);
+}
+
+.status-badge.status-cleared {
+    color: var(--color-primary);
+    border-color: var(--color-primary);
+    background: var(--color-primary-soft);
 }
 
 .pager {
@@ -2213,14 +2290,14 @@ button {
     text-align: center;
     font-size: 14px;
     color: var(--text-muted);
-    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 .dict-word {
     font-size: 26px;
     font-weight: 700;
     color: var(--text-strong);
-    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 .dict-phonetic-row {
@@ -2254,7 +2331,7 @@ button {
     font-size: 14px;
     line-height: 1.7;
     color: var(--text);
-    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 .dict-sense:first-child {
@@ -2435,7 +2512,7 @@ button {
     font-size: 14px;
     font-weight: 600;
     color: var(--text-strong);
-    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 .record-meta {
@@ -2478,7 +2555,7 @@ button {
 .record-word-meaning {
     flex: 1;
     min-width: 0;
-    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 /* ========== 响应式 ========== */
