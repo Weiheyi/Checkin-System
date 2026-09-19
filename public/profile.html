@@ -10,9 +10,17 @@
     <script>
         (function () {
             try {
+                var el = document.documentElement;
                 var t = localStorage.getItem('checkin_theme') || 'system';
                 var dark = t === 'dark' || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-                document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+                el.dataset.theme = dark ? 'dark' : 'light';
+
+                // 界面样式（配色）与界面透明度也在这里先套上，避免刷新时闪一下
+                var accent = localStorage.getItem('checkin_accent');
+                if (accent && accent !== 'default') el.dataset.accent = accent;
+
+                var alpha = Number(localStorage.getItem('checkin_ui_alpha'));
+                if (alpha >= 30 && alpha < 100) el.style.setProperty('--ui-alpha', alpha + '%');
             } catch (e) {}
         })();
     </script>
@@ -153,6 +161,25 @@
                     <button type="button" data-theme="light">浅色</button>
                     <button type="button" data-theme="dark">深色</button>
                     <button type="button" data-theme="system">跟随系统</button>
+                </div>
+            </div>
+
+            <div class="setting-row">
+                <div>
+                    <div class="setting-label">界面样式</div>
+                    <div class="setting-desc">换个配色，浅色与深色都会跟着变</div>
+                </div>
+                <div class="switch-group switch-wrap" id="accentGroup" role="group" aria-label="界面样式"></div>
+            </div>
+
+            <div class="setting-row">
+                <div>
+                    <div class="setting-label">界面透明度</div>
+                    <div class="setting-desc">调低后卡片会半透明，自定义背景就透出来了</div>
+                </div>
+                <div class="opacity-control">
+                    <input type="range" id="uiAlpha" min="30" max="100" step="5" aria-label="界面透明度">
+                    <span class="opacity-value" id="uiAlphaValue">100%</span>
                 </div>
             </div>
 

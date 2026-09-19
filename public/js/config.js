@@ -16,5 +16,18 @@ export const PAGES = {
 // 主题偏好的 localStorage key；页面 <head> 里的内联脚本也用同一个字符串，改动时需同步
 export const THEME_KEY = 'checkin_theme';
 
+// 界面样式（配色）与界面透明度的本地 key；同样要和 <head> 里的内联脚本保持一致
+export const ACCENT_KEY = 'checkin_accent';
+export const UI_ALPHA_KEY = 'checkin_ui_alpha';
+
+// 可选的「界面样式」：只换主色与渐变，浅色 / 深色各自适配
+export const ACCENTS = [
+    { key: 'default', label: '默认' },
+    { key: 'sunset', label: '晚霞' },
+    { key: 'ocean', label: '大海' },
+    { key: 'forest', label: '森林' },
+    { key: 'sakura', label: '樱粉' }
+];
+
 // 个人中心可选的预设头像
 export const AVATAR_CHOICES = ['📚', '🔥', '🌟', '🚀', '🎯', '🌱', '🧠', '💪', '☕', '🎨', '🎧', '🐱'];

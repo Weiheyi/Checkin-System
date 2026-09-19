@@ -1,7 +1,7 @@
 import { api } from './api.js';
 import { store } from './store.js';
-import { AVATAR_CHOICES } from './config.js';
-import { getTheme, setTheme } from './theme.js';
+import { AVATAR_CHOICES, ACCENTS } from './config.js';
+import { getTheme, setTheme, getAccent, setAccent, getUiAlpha, applyUiAlpha, setUiAlpha } from './theme.js';
 import { $, $$, toast, setLoading, paintAvatar } from './ui.js';
 import { initShell, setShellUser, setBackgroundOpacity, logout } from './shell.js';
 import { cropImage } from './image-crop.js';
@@ -27,6 +27,9 @@ function cacheElements() {
     els.completionRate = $('#completionRate');
 
     els.themeGroup = $('#themeGroup');
+    els.accentGroup = $('#accentGroup');
+    els.uiAlpha = $('#uiAlpha');
+    els.uiAlphaValue = $('#uiAlphaValue');
     els.togglePasswordBtn = $('#togglePasswordBtn');
     els.passwordForm = $('#passwordForm');
     els.newPassword = $('#newPassword');
@@ -156,6 +159,34 @@ function renderThemeGroup() {
     $$('#themeGroup button').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.theme === theme);
     });
+}
+
+// 「界面样式」的配色按钮由 config 里的 ACCENTS 生成，以后想再加只改那一个数组
+function renderAccentGroup() {
+    const current = getAccent();
+    els.accentGroup.replaceChildren();
+
+    const fragment = document.createDocumentFragment();
+    ACCENTS.forEach(item => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.dataset.accent = item.key;
+        btn.textContent = item.label;
+        btn.classList.toggle('active', item.key === current);
+        btn.addEventListener('click', () => {
+            setAccent(item.key);
+            renderAccentGroup();
+        });
+        fragment.appendChild(btn);
+    });
+
+    els.accentGroup.appendChild(fragment);
+}
+
+function renderUiAlpha() {
+    const value = getUiAlpha();
+    els.uiAlpha.value = String(value);
+    els.uiAlphaValue.textContent = `${value}%`;
 }
 
 async function savePassword(event) {
@@ -345,6 +376,17 @@ function bindEvents() {
     // 顶部栏切换主题时，这里的选中状态也要跟着变
     window.addEventListener('themechange', renderThemeGroup);
 
+    // 界面透明度：拖动即时预览，松手才写本地存储
+    els.uiAlpha.addEventListener('input', () => {
+        const value = Number(els.uiAlpha.value);
+        els.uiAlphaValue.textContent = `${value}%`;
+        applyUiAlpha(value);
+    });
+    els.uiAlpha.addEventListener('change', () => {
+        const value = setUiAlpha(Number(els.uiAlpha.value));
+        els.uiAlphaValue.textContent = `${value}%`;
+    });
+
     els.togglePasswordBtn.addEventListener('click', () => {
         const hidden = els.passwordForm.classList.toggle('hidden');
         els.togglePasswordBtn.textContent = hidden ? '修改' : '取消';
@@ -393,6 +435,8 @@ async function init() {
     cacheElements();
     bindEvents();
     renderThemeGroup();
+    renderAccentGroup();
+    renderUiAlpha();
 
     // 先用缓存渲染，避免空白；随后拉一次最新资料
     const cached = store.getUser();

@@ -2,6 +2,10 @@
 :root {
     color-scheme: light;
 
+    /* 界面透明度：由个人中心的滑块控制（100% 即现在这样完全不透明）。
+       面板颜色写成 rgb(r g b / alpha)，改这一个值就能让所有卡片一起变透。 */
+    --ui-alpha: 100%;
+
     --color-primary: #5a67d8;
     --color-primary-dark: #4c51bf;
     --color-primary-soft: #eef1ff;
@@ -17,9 +21,9 @@
     --text-muted: #5b6b7c;
     --text-faint: #8a94a6;
 
-    --bg: #f4f5fb;
-    --surface: #ffffff;
-    --surface-soft: #fafbff;
+    --bg: rgb(244 245 251 / var(--ui-alpha));
+    --surface: rgb(255 255 255 / var(--ui-alpha));
+    --surface-soft: rgb(250 251 255 / var(--ui-alpha));
     --border: #e2e8f0;
     --border-strong: #cbd5e0;
     --overlay: rgba(26, 32, 44, 0.5);
@@ -64,9 +68,9 @@
     --text-muted: #94a3b8;
     --text-faint: #64748b;
 
-    --bg: #0e1016;
-    --surface: #171a23;
-    --surface-soft: #1b1f2a;
+    --bg: rgb(14 16 22 / var(--ui-alpha));
+    --surface: rgb(23 26 35 / var(--ui-alpha));
+    --surface-soft: rgb(27 31 42 / var(--ui-alpha));
     --border: #262b38;
     --border-strong: #384052;
     --overlay: rgba(0, 0, 0, 0.62);
@@ -76,6 +80,85 @@
     --shadow-primary: 0 10px 25px rgba(99, 102, 241, 0.3);
 
     --ring: 0 0 0 4px rgba(139, 147, 248, 0.18);
+}
+
+/* ========== 界面样式（配色） ========== */
+/* 只换主色与渐变；浅色 / 深色各一套。data-accent 由个人中心的「界面样式」设置 */
+
+/* 晚霞 */
+[data-accent="sunset"] {
+    --color-primary: #e2622f;
+    --color-primary-dark: #c8501f;
+    --color-primary-soft: #fff0e8;
+    --gradient: linear-gradient(135deg, #f97362 0%, #d946a0 100%);
+    --shadow-primary: 0 10px 25px rgba(226, 98, 47, 0.32);
+    --ring: 0 0 0 4px rgba(226, 98, 47, 0.16);
+}
+
+[data-theme="dark"][data-accent="sunset"] {
+    --color-primary: #ff9066;
+    --color-primary-dark: #f2743f;
+    --color-primary-soft: #39231d;
+    --gradient: linear-gradient(135deg, #fb7185 0%, #e0518a 100%);
+    --shadow-primary: 0 10px 25px rgba(251, 113, 133, 0.28);
+    --ring: 0 0 0 4px rgba(255, 144, 102, 0.18);
+}
+
+/* 大海 */
+[data-accent="ocean"] {
+    --color-primary: #0f8ba8;
+    --color-primary-dark: #0b6e86;
+    --color-primary-soft: #e6f7fb;
+    --gradient: linear-gradient(135deg, #22d3ee 0%, #2563eb 100%);
+    --shadow-primary: 0 10px 25px rgba(15, 139, 168, 0.32);
+    --ring: 0 0 0 4px rgba(15, 139, 168, 0.16);
+}
+
+[data-theme="dark"][data-accent="ocean"] {
+    --color-primary: #4cc9e8;
+    --color-primary-dark: #2fb0d3;
+    --color-primary-soft: #12303a;
+    --gradient: linear-gradient(135deg, #22d3ee 0%, #3b82f6 100%);
+    --shadow-primary: 0 10px 25px rgba(34, 211, 238, 0.26);
+    --ring: 0 0 0 4px rgba(76, 201, 232, 0.18);
+}
+
+/* 森林 */
+[data-accent="forest"] {
+    --color-primary: #2f855a;
+    --color-primary-dark: #276749;
+    --color-primary-soft: #e9f7ef;
+    --gradient: linear-gradient(135deg, #34d399 0%, #15803d 100%);
+    --shadow-primary: 0 10px 25px rgba(47, 133, 90, 0.32);
+    --ring: 0 0 0 4px rgba(47, 133, 90, 0.16);
+}
+
+[data-theme="dark"][data-accent="forest"] {
+    --color-primary: #63d69b;
+    --color-primary-dark: #45c186;
+    --color-primary-soft: #163025;
+    --gradient: linear-gradient(135deg, #34d399 0%, #059669 100%);
+    --shadow-primary: 0 10px 25px rgba(52, 211, 153, 0.24);
+    --ring: 0 0 0 4px rgba(99, 214, 155, 0.18);
+}
+
+/* 樱粉 */
+[data-accent="sakura"] {
+    --color-primary: #d1478a;
+    --color-primary-dark: #b53a74;
+    --color-primary-soft: #fdeef5;
+    --gradient: linear-gradient(135deg, #f9a8d4 0%, #db2777 100%);
+    --shadow-primary: 0 10px 25px rgba(209, 71, 138, 0.3);
+    --ring: 0 0 0 4px rgba(209, 71, 138, 0.16);
+}
+
+[data-theme="dark"][data-accent="sakura"] {
+    --color-primary: #f4a0cf;
+    --color-primary-dark: #e97cba;
+    --color-primary-soft: #351d2c;
+    --gradient: linear-gradient(135deg, #f9a8d4 0%, #ec4899 100%);
+    --shadow-primary: 0 10px 25px rgba(236, 72, 153, 0.26);
+    --ring: 0 0 0 4px rgba(244, 160, 207, 0.18);
 }
 
 /* ========== 基础 ========== */

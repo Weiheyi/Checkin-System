@@ -9,9 +9,17 @@
     <script>
         (function () {
             try {
+                var el = document.documentElement;
                 var t = localStorage.getItem('checkin_theme') || 'system';
                 var dark = t === 'dark' || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-                document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+                el.dataset.theme = dark ? 'dark' : 'light';
+
+                // 界面样式（配色）与界面透明度也在这里先套上，避免刷新时闪一下
+                var accent = localStorage.getItem('checkin_accent');
+                if (accent && accent !== 'default') el.dataset.accent = accent;
+
+                var alpha = Number(localStorage.getItem('checkin_ui_alpha'));
+                if (alpha >= 30 && alpha < 100) el.style.setProperty('--ui-alpha', alpha + '%');
             } catch (e) {}
         })();
     </script>
