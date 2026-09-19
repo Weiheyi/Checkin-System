@@ -115,6 +115,16 @@ create table if not exists public.study_logs (
   created_at timestamptz not null default now()
 );
 
+-- 用户反馈：个人中心「意见反馈」提交的内容
+-- 站长在 Supabase 后台的 Table Editor 里就能看到（service role 不受 RLS 限制）
+create table if not exists public.feedback (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  content text not null check (char_length(content) between 1 and 2000),
+  contact text not null default '',
+  created_at timestamptz not null default now()
+);
+
 -- ============================================================
 -- 二、好友与点赞
 -- ============================================================
@@ -150,6 +160,7 @@ create index if not exists words_book_pos_idx          on public.words(book_id, 
 create index if not exists study_sessions_user_idx     on public.study_sessions(user_id, created_at desc);
 create index if not exists study_logs_session_idx      on public.study_logs(session_id);
 create index if not exists study_logs_user_idx         on public.study_logs(user_id, created_at desc);
+create index if not exists feedback_user_idx          on public.feedback(user_id, created_at desc);
 
 -- ============================================================
 -- 三、行级安全（RLS）：本人可读写，好友可读
@@ -183,6 +194,7 @@ alter table public.wordbooks     enable row level security;
 alter table public.words         enable row level security;
 alter table public.study_sessions enable row level security;
 alter table public.study_logs     enable row level security;
+alter table public.feedback       enable row level security;
 
 -- profiles：本人可读写，好友可读
 drop policy if exists "profiles: own"          on public.profiles;
@@ -236,6 +248,14 @@ create policy "study_sessions: own all" on public.study_sessions for all using (
 
 drop policy if exists "study_logs: own all" on public.study_logs;
 create policy "study_logs: own all" on public.study_logs for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- feedback：本人可提交 / 查看 / 删除自己的反馈（站长在后台用 service role 看全部）
+drop policy if exists "feedback: own read"   on public.feedback;
+drop policy if exists "feedback: own insert" on public.feedback;
+drop policy if exists "feedback: own delete" on public.feedback;
+create policy "feedback: own read"   on public.feedback for select using (auth.uid() = user_id);
+create policy "feedback: own insert" on public.feedback for insert with check (auth.uid() = user_id);
+create policy "feedback: own delete" on public.feedback for delete using (auth.uid() = user_id);
 
 -- ============================================================
 -- 四、触发器

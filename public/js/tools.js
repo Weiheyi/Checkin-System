@@ -2449,13 +2449,15 @@ function speakDictWord() {
 
 /* ---------------- 工具切换 ---------------- */
 
-// 传 null 回到「只列四个功能」的首页
+const TOOL_LABELS = { timer: '⏱ 计时器', countdown: '⏳ 倒计时', words: '📖 背单词', dict: '🔤 字典' };
+
+// 传 null 回到「只列四个功能」的首页；选中某个工具后只显示它自己
 function switchTool(name) {
     const home = !name;
 
     els.toolHome.hidden = !home;
-    els.toolNav.hidden = home;
-    $$('#toolTabs button').forEach(btn => btn.classList.toggle('active', btn.dataset.tool === name));
+    els.toolBar.hidden = home;
+    if (!home) els.toolBarTitle.textContent = TOOL_LABELS[name] || '';
 
     els.panelTimer.classList.toggle('hidden', name !== 'timer');
     els.panelCountdown.classList.toggle('hidden', name !== 'countdown');
@@ -2561,9 +2563,9 @@ function setupUpload({ input, button, status, textarea, dropEls, onDone }) {
 /* ---------------- 初始化 ---------------- */
 
 function cacheElements() {
-    els.toolTabs = $('#toolTabs');
     els.toolHome = $('#toolHome');
-    els.toolNav = $('#toolNav');
+    els.toolBar = $('#toolBar');
+    els.toolBarTitle = $('#toolBarTitle');
     els.toolBack = $('#toolBack');
     els.panelTimer = $('#panel-timer');
     els.panelCountdown = $('#panel-countdown');
@@ -2717,10 +2719,6 @@ function cacheElements() {
 }
 
 function bindEvents() {
-    els.toolTabs.addEventListener('click', e => {
-        const btn = e.target.closest('button[data-tool]');
-        if (btn) switchTool(btn.dataset.tool);
-    });
     els.toolHome.addEventListener('click', e => {
         const btn = e.target.closest('button[data-tool]');
         if (btn) switchTool(btn.dataset.tool);

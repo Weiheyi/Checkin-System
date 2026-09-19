@@ -98,6 +98,15 @@ function mapBook(row) {
     };
 }
 
+function mapFeedback(row) {
+    return {
+        id: row.id,
+        content: row.content,
+        contact: row.contact || '',
+        createdAt: row.created_at
+    };
+}
+
 function mapSession(row) {
     return {
         id: row.id,
@@ -380,6 +389,50 @@ export const api = {
                 if (error) fail(error.message, 500);
             }
 
+            return {};
+        }
+    },
+
+    feedback: {
+        // 我自己提交过的反馈，最新的在前
+        async list(limit = 50) {
+            const user = await requireUser();
+            const { data, error } = await supabase
+                .from('feedback')
+                .select('id, content, contact, created_at')
+                .eq('user_id', user.id)
+                .order('created_at', { ascending: false })
+                .limit(limit);
+
+            if (error) fail(error.message, 500);
+            return (data || []).map(mapFeedback);
+        },
+
+        async create({ content, contact }) {
+            const user = await requireUser();
+
+            const text = String(content || '').trim();
+            if (!text) fail('请先写点内容', 400);
+            if (text.length > 2000) fail('内容太长了，请精简到 2000 字以内', 400);
+
+            const { data, error } = await supabase
+                .from('feedback')
+                .insert({
+                    user_id: user.id,
+                    content: text,
+                    contact: String(contact || '').trim().slice(0, 80)
+                })
+                .select('id, content, contact, created_at')
+                .single();
+
+            if (error) fail(error.message, 500);
+            return { feedback: mapFeedback(data) };
+        },
+
+        async remove(id) {
+            await requireUser();
+            const { error } = await supabase.from('feedback').delete().eq('id', id);
+            if (error) fail(error.message, 500);
             return {};
         }
     },

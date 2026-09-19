@@ -31,6 +31,11 @@ function cacheElements() {
     els.newPassword = $('#newPassword');
     els.confirmPassword = $('#confirmPassword');
     els.logoutSetting = $('#logoutSetting');
+
+    els.feedbackForm = $('#feedbackForm');
+    els.feedbackInput = $('#feedbackInput');
+    els.feedbackContact = $('#feedbackContact');
+    els.feedbackList = $('#feedbackList');
 }
 
 /* ---------------- 资料 ---------------- */
@@ -158,11 +163,104 @@ async function savePassword(event) {
     }
 }
 
+/* ---------------- 意见反馈 ---------------- */
+
+function renderFeedbackList(items) {
+    els.feedbackList.replaceChildren();
+
+    if (!items.length) {
+        els.feedbackList.className = 'feedback-list empty-hint';
+        els.feedbackList.textContent = '还没有提交过反馈。';
+        return;
+    }
+
+    els.feedbackList.className = 'feedback-list';
+    const fragment = document.createDocumentFragment();
+
+    items.forEach(item => {
+        const row = document.createElement('div');
+        row.className = 'feedback-item';
+
+        const head = document.createElement('div');
+        head.className = 'feedback-head';
+
+        const time = document.createElement('span');
+        time.className = 'feedback-time';
+        time.textContent = new Date(item.createdAt).toLocaleString('zh-CN', { hour12: false });
+
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'btn-ghost feedback-delete';
+        del.textContent = '删除';
+        del.addEventListener('click', () => removeFeedback(item));
+
+        head.append(time, del);
+
+        const text = document.createElement('div');
+        text.className = 'feedback-text';
+        text.textContent = item.content;
+
+        row.append(head, text);
+
+        if (item.contact) {
+            const contact = document.createElement('div');
+            contact.className = 'feedback-contact';
+            contact.textContent = `联系方式：${item.contact}`;
+            row.appendChild(contact);
+        }
+
+        fragment.appendChild(row);
+    });
+
+    els.feedbackList.appendChild(fragment);
+}
+
+async function loadFeedback() {
+    try {
+        renderFeedbackList(await api.feedback.list());
+    } catch (err) {
+        els.feedbackList.className = 'feedback-list';
+        els.feedbackList.textContent = err.message;
+    }
+}
+
+async function submitFeedback(event) {
+    event.preventDefault();
+
+    const content = els.feedbackInput.value.trim();
+    if (!content) return toast('请先写点内容', 'error');
+
+    const button = $('button[type=submit]', els.feedbackForm);
+    setLoading(button, true);
+    try {
+        await api.feedback.create({ content, contact: els.feedbackContact.value });
+        els.feedbackInput.value = '';
+        els.feedbackContact.value = '';
+        toast('反馈已提交，谢谢！', 'success');
+        await loadFeedback();
+    } catch (err) {
+        toast(err.message, 'error');
+    } finally {
+        setLoading(button, false);
+    }
+}
+
+async function removeFeedback(item) {
+    try {
+        await api.feedback.remove(item.id);
+        toast('已删除', 'success');
+        await loadFeedback();
+    } catch (err) {
+        toast(err.message, 'error');
+    }
+}
+
 /* ---------------- 初始化 ---------------- */
 
 function bindEvents() {
     els.profileForm.addEventListener('submit', saveProfile);
     els.passwordForm.addEventListener('submit', savePassword);
+    els.feedbackForm.addEventListener('submit', submitFeedback);
 
     $$('#themeGroup button').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -197,6 +295,7 @@ async function init() {
         applyUser(user);
         renderStats(stats);
         renderJoined(user);
+        await loadFeedback();
     } catch (err) {
         toast(err.message, 'error');
     }

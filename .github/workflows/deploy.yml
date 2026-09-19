@@ -22,6 +22,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # 给 public/ 里的 css / js 挂上 ?v=提交号，更新后浏览器会自动取新文件，
+      # 不用再手动强制刷新（脚本只改发布产物，源码保持无构建）
+      - name: 给静态资源加版本号
+        run: node scripts/stamp-assets.mjs "${GITHUB_SHA::8}"
+
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -1558,8 +1558,9 @@ button {
 }
 
 .tool-icon {
-    font-size: 22px;
-    line-height: 1.2;
+    font-size: 32px;
+    line-height: 1.15;
+    margin-bottom: 2px;
 }
 
 .tool-name {
@@ -1573,8 +1574,25 @@ button {
     color: var(--text-muted);
 }
 
+/* 选中的工具顶部只留「返回 + 功能名」，不再列出其它功能 */
+#toolBar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
+}
+
 .tool-back {
-    margin-bottom: var(--space-2);
+    flex-shrink: 0;
+}
+
+.tool-bar-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-strong);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* ========== 工具页：背单词 ========== */
@@ -2555,6 +2573,59 @@ button {
 .record-word-meaning {
     flex: 1;
     min-width: 0;
+    overflow-wrap: break-word;
+}
+
+/* ========== 个人中心：意见反馈 ========== */
+.feedback-list {
+    margin-top: var(--space-3);
+}
+
+.feedback-list.empty-hint {
+    margin-top: var(--space-2);
+}
+
+.feedback-item {
+    padding: var(--space-3);
+    margin-bottom: var(--space-2);
+    background: var(--bg);
+    border-radius: var(--radius-md);
+}
+
+.feedback-item:last-child {
+    margin-bottom: 0;
+}
+
+.feedback-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    margin-bottom: var(--space-1);
+}
+
+.feedback-time {
+    font-size: 12px;
+    color: var(--text-faint);
+}
+
+.feedback-delete {
+    padding: 2px 10px;
+    font-size: 12px;
+}
+
+.feedback-text {
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--text);
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+}
+
+.feedback-contact {
+    margin-top: var(--space-1);
+    font-size: 12px;
+    color: var(--text-muted);
     overflow-wrap: break-word;
 }
 

@@ -85,6 +85,24 @@
         </section>
 
         <section class="card">
+            <h3 class="card-title">💬 意见反馈</h3>
+            <p class="setting-desc">用着哪里不顺手、想要什么功能，写在这里就行。</p>
+            <form class="profile-form" id="feedbackForm">
+                <div class="form-group">
+                    <label for="feedbackInput">反馈内容</label>
+                    <textarea id="feedbackInput" maxlength="2000"
+                              placeholder="例如：考核希望能按错题重练…"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="feedbackContact">联系方式（可选）</label>
+                    <input type="text" id="feedbackContact" maxlength="80" placeholder="邮箱 / 微信，方便回复你">
+                </div>
+                <button type="submit" class="btn-primary">提交反馈</button>
+            </form>
+            <div class="feedback-list" id="feedbackList"></div>
+        </section>
+
+        <section class="card">
             <h3 class="card-title">⚙️ 设置</h3>
 
             <div class="setting-row">
