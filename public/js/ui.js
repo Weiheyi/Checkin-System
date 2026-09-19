@@ -177,3 +177,94 @@ export function confirmDialog({
         ok.focus();
     });
 }
+
+/* ---------------- 使用说明提醒 ---------------- */
+
+const GUIDE_TIP_KEY = 'checkin_guide_tip_off';
+
+// 用户勾过「以后不再提醒」就一直不再弹；
+// 隐私模式下写不了存储，视为已关掉，免得每次访问都打扰
+export function guideTipOff() {
+    try {
+        return localStorage.getItem(GUIDE_TIP_KEY) === '1';
+    } catch {
+        return true;
+    }
+}
+
+function rememberGuideTipOff() {
+    try {
+        localStorage.setItem(GUIDE_TIP_KEY, '1');
+    } catch {
+        /* 忽略 */
+    }
+}
+
+// 访问时提示去看「使用说明」；勾了「以后不再提醒」就永久关掉
+export function showGuideTip({ guideHref = 'guide.html' } = {}) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+
+    const box = document.createElement('div');
+    box.className = 'modal-box';
+    box.setAttribute('role', 'dialog');
+    box.setAttribute('aria-modal', 'true');
+
+    const heading = document.createElement('h4');
+    heading.className = 'modal-title';
+    heading.textContent = '💡 先看一眼使用说明？';
+
+    const text = document.createElement('p');
+    text.className = 'modal-text tight';
+    text.textContent = '打卡、背单词、考核、字典……功能不少。第一次用的话，建议花两分钟过一遍「说明」，用起来会顺手很多。';
+
+    const check = document.createElement('label');
+    check.className = 'check-inline modal-check';
+    const mark = document.createElement('input');
+    mark.type = 'checkbox';
+    const label = document.createElement('span');
+    label.textContent = '以后不再提醒';
+    check.append(mark, label);
+
+    const actions = document.createElement('div');
+    actions.className = 'modal-actions';
+
+    const later = document.createElement('button');
+    later.type = 'button';
+    later.className = 'btn-ghost';
+    later.textContent = '以后再说';
+
+    const go = document.createElement('button');
+    go.type = 'button';
+    go.className = 'btn-primary';
+    go.textContent = '去看说明';
+
+    actions.append(later, go);
+    box.append(heading, text, check, actions);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    function close() {
+        if (mark.checked) rememberGuideTipOff();
+        overlay.classList.remove('show');
+        document.removeEventListener('keydown', onKey);
+        setTimeout(() => overlay.remove(), 180);
+    }
+
+    function onKey(event) {
+        if (event.key === 'Escape') close();
+    }
+
+    later.addEventListener('click', close);
+    go.addEventListener('click', () => {
+        close();
+        location.href = guideHref;
+    });
+    overlay.addEventListener('click', event => {
+        if (event.target === overlay) close();
+    });
+    document.addEventListener('keydown', onKey);
+
+    requestAnimationFrame(() => overlay.classList.add('show'));
+    go.focus();
+}

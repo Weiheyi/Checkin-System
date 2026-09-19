@@ -2,7 +2,7 @@ import { PAGES } from './config.js';
 import { store } from './store.js';
 import { api } from './api.js';
 import { resolvedTheme, setTheme } from './theme.js';
-import { paintAvatar } from './ui.js';
+import { paintAvatar, showGuideTip, guideTipOff } from './ui.js';
 
 // 应用页共用同一套导航，新增页面时只改这里
 const NAV = [
@@ -14,6 +14,9 @@ const NAV = [
 ];
 
 const els = {};
+
+// 同一次浏览器会话里只提示一次「去看使用说明」
+const GUIDE_TIP_SEEN_KEY = 'checkin_guide_tip_seen';
 
 export function requireLogin() {
     if (store.isLoggedIn()) return true;
@@ -96,6 +99,24 @@ export function mountShell({ active }) {
     const cached = store.getUser();
     if (cached) setShellUser(cached);
     paintThemeButton();
+
+    maybeShowGuideTip(active);
+}
+
+// 每次访问提示一次去看「使用说明」：同一浏览器会话只弹一次，
+// 用户在弹窗里勾了「以后不再提醒」就永久不再弹
+function maybeShowGuideTip(active) {
+    if (active === 'guide' || guideTipOff()) return;
+
+    try {
+        if (sessionStorage.getItem(GUIDE_TIP_SEEN_KEY) === '1') return;
+        sessionStorage.setItem(GUIDE_TIP_SEEN_KEY, '1');
+    } catch {
+        /* 存不了就按「没提示过」处理 */
+    }
+
+    // 等外壳渲染完再弹，别抢焦点
+    setTimeout(() => showGuideTip({ guideHref: PAGES.guide }), 400);
 }
 
 export function setShellUser(user) {

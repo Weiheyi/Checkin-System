@@ -325,6 +325,13 @@ button {
     padding: var(--space-4) var(--space-3) 48px;
 }
 
+/* 桌面宽屏上 820px 显得太窄，放宽一些，别把内容挤在中间一条 */
+@media (min-width: 1024px) {
+    .container {
+        max-width: 1140px;
+    }
+}
+
 .app-header {
     display: flex;
     justify-content: space-between;
@@ -1259,6 +1266,18 @@ button {
     color: var(--text-muted);
     line-height: 1.6;
     margin-bottom: var(--space-4);
+}
+
+/* 紧跟复选框的说明文字，间距收一点 */
+.modal-text.tight {
+    margin-bottom: var(--space-2);
+}
+
+/* 弹窗里的「以后不再提醒」 */
+.modal-check {
+    display: flex;
+    width: fit-content;
+    margin-bottom: var(--space-3);
 }
 
 .modal-actions {
