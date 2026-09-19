@@ -1529,24 +1529,42 @@ button {
 }
 
 /* ========== 工具页：功能选择 ========== */
+/* 让四张卡片撑满可视高度，别在下面留一大片空白 */
+#toolHome {
+    /* 需要扣掉的高度：顶部栏 + 页面留白 + 卡片自身的内边距与标题 */
+    --tool-home-offset: 230px;
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100vh - var(--tool-home-offset));
+}
+
+@supports (height: 100dvh) {
+    #toolHome {
+        min-height: calc(100dvh - var(--tool-home-offset));
+    }
+}
+
 .tool-grid {
+    flex: 1;
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: var(--space-2);
-    margin-top: var(--space-2);
+    grid-template-rows: repeat(2, minmax(120px, 1fr));
+    gap: var(--space-3);
+    margin-top: var(--space-3);
 }
 
 .tool-card {
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
     padding: var(--space-3);
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
     font-family: inherit;
-    text-align: left;
+    text-align: center;
     color: var(--text);
     cursor: pointer;
     transition: all var(--transition);
@@ -1557,14 +1575,17 @@ button {
     background: var(--color-primary-soft);
 }
 
+.tool-card:active {
+    transform: scale(0.98);
+}
+
 .tool-icon {
-    font-size: 32px;
-    line-height: 1.15;
-    margin-bottom: 2px;
+    font-size: 42px;
+    line-height: 1.1;
 }
 
 .tool-name {
-    font-size: 15px;
+    font-size: 16px;
     font-weight: 700;
     color: var(--text-strong);
 }
@@ -2629,6 +2650,78 @@ button {
     overflow-wrap: break-word;
 }
 
+/* ========== 使用说明 ========== */
+.guide-toc {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    margin-top: var(--space-2);
+}
+
+.guide-toc a {
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-pill);
+    background: var(--surface);
+    font-size: 13px;
+    color: var(--text-muted);
+    text-decoration: none;
+    transition: all var(--transition);
+}
+
+.guide-toc a:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+/* 锚点跳转时给顶部栏留出位置，别把标题顶到看不见 */
+.guide-section {
+    scroll-margin-top: 84px;
+}
+
+.guide-sub {
+    margin: var(--space-3) 0 var(--space-1);
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-strong);
+}
+
+/* 全局 reset 把 padding 清零了，列表要自己留出序号 / 圆点的位置 */
+.guide-list {
+    padding-left: 22px;
+    font-size: 14px;
+    line-height: 1.9;
+    color: var(--text);
+}
+
+.guide-list li {
+    margin-bottom: 6px;
+}
+
+.guide-list li::marker {
+    color: var(--color-primary);
+}
+
+.guide-list code {
+    padding: 1px 6px;
+    border-radius: var(--radius-sm);
+    background: var(--surface-soft);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    color: var(--text-strong);
+}
+
+.guide-note {
+    margin-top: var(--space-2);
+    padding: 10px 12px;
+    border-left: 3px solid var(--color-primary);
+    border-radius: var(--radius-sm);
+    background: var(--color-primary-soft);
+    font-size: 13px;
+    line-height: 1.75;
+    color: var(--text);
+}
+
 /* ========== 响应式 ========== */
 @media (max-width: 720px) {
     .app-nav {
@@ -2641,6 +2734,11 @@ button {
 
     .container {
         padding-bottom: 96px;
+    }
+
+    /* 手机上还要扣掉底部导航栏的高度 */
+    #toolHome {
+        --tool-home-offset: 280px;
     }
 
     .app-header {

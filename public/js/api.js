@@ -453,6 +453,28 @@ export const api = {
             return { task: mapTask(data) };
         },
 
+        // 学习（背诵 / 考核 / 消灭错词）结束时自动记一条任务，直接算完成，
+        // 这样完成率能反映学习量。今天还没打卡就返回 task: null，由调用方静默跳过
+        async addStudyTask(content) {
+            const user = await requireUser();
+            const checkin = await getTodayCheckin(user.id);
+            if (!checkin) return { task: null };
+
+            const { data, error } = await supabase
+                .from('tasks')
+                .insert({
+                    user_id: user.id,
+                    checkin_id: checkin.id,
+                    content: String(content || '').trim(),
+                    completed: true
+                })
+                .select()
+                .single();
+
+            if (error) fail(error.message, 500);
+            return { task: mapTask(data) };
+        },
+
         async toggle(id, completed) {
             await requireUser();
             const { data, error } = await supabase

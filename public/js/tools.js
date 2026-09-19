@@ -1180,6 +1180,10 @@ function finishStudy() {
         ['模糊', result.vague],
         ['不认识', result.again]
     ], `本轮完成，共 ${total} 个单词`);
+
+    const answered = result.known + result.vague + result.again;
+    if (answered) recordStudyTask(`📖 背单词：${studyBookName()}（${answered} 个）`);
+
     renderDetailStats();
 }
 
@@ -1648,6 +1652,9 @@ function finishQuiz() {
         ['用时', used]
     ], `考核完成，得分 ${rate} 分 · 用时 ${used}`);
 
+    const answered = quiz.correct + quiz.wrong.length;
+    if (answered) recordStudyTask(`📝 考核：${studyBookName()}（${answered} 题 · 正确率 ${rate}%）`);
+
     if (quiz.wrong.length) {
         const list = document.createElement('div');
         list.className = 'wrong-list';
@@ -2001,6 +2008,8 @@ function finishElim() {
         ['待消灭', pending.length]
     ], pending.length ? '本轮结束' : '🎉 错词全部消灭！');
 
+    if (cleared) recordStudyTask(`🎯 消灭错词：${studyBookName()}（消灭 ${cleared} 个）`);
+
     const actions = document.createElement('div');
     actions.className = 'timer-actions';
 
@@ -2045,6 +2054,23 @@ function applyElimResult(word, correct) {
 }
 
 /* ---------------- 共用 ---------------- */
+
+// 背完 / 考完 / 灭完自动往「今天的打卡任务」里记一条（算已完成），
+// 这样完成率能反映学习量，而不是背了一天还是 0%；今天没打卡就静默跳过
+function recordStudyTask(text) {
+    api.tasks
+        .addStudyTask(text)
+        .then(({ task }) => {
+            if (task) toast(`已记入今日任务：${text}`, 'success');
+        })
+        .catch(() => {
+            /* 记不上不影响学习本身 */
+        });
+}
+
+function studyBookName() {
+    return (wordsState.current && wordsState.current.name) || '单词本';
+}
 
 // 记录写入失败只提示一次，避免每答一题弹一次
 function warnRecordFailure(state, message) {

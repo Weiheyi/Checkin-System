@@ -9,7 +9,8 @@ export const PAGES = {
     dashboard: 'dashboard.html',
     tools: 'tools.html',
     friends: 'friends.html',
-    profile: 'profile.html'
+    profile: 'profile.html',
+    guide: 'guide.html'
 };
 
 // 主题偏好的 localStorage key；页面 <head> 里的内联脚本也用同一个字符串，改动时需同步

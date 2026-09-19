@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>使用说明 - 学习打卡系统</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="preconnect" href="https://dhemqusvocjcbfvopwcm.supabase.co" crossorigin>
+    <link rel="stylesheet" href="css/style.css">
+    <script>
+        (function () {
+            try {
+                var t = localStorage.getItem('checkin_theme') || 'system';
+                var dark = t === 'dark' || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+            } catch (e) {}
+        })();
+    </script>
+    <link rel="modulepreload" href="js/config.js">
+    <link rel="modulepreload" href="js/supabase.js">
+    <link rel="modulepreload" href="js/store.js">
+    <link rel="modulepreload" href="js/ui.js">
+    <link rel="modulepreload" href="js/theme.js">
+    <link rel="modulepreload" href="js/shell.js">
+    <link rel="modulepreload" href="js/api.js">
+</head>
+<body class="app-body">
+    <div class="container">
+        <div id="appShell"></div>
+
+        <section class="card">
+            <h3 class="card-title">💡 使用说明</h3>
+            <p class="setting-desc">
+                这个站点用来记录每天的学习、管理背单词和打卡。第一次用，看第一节「三分钟上手」就够；
+                其余几节按需查即可。
+            </p>
+            <nav class="guide-toc" aria-label="目录">
+                <a href="#start">① 三分钟上手</a>
+                <a href="#checkin">② 打卡与任务</a>
+                <a href="#words">③ 背单词</a>
+                <a href="#tools">④ 学习工具</a>
+                <a href="#friends">⑤ 好友与排行榜</a>
+                <a href="#profile">⑥ 个人中心与反馈</a>
+                <a href="#faq">⑦ 常见问题</a>
+            </nav>
+        </section>
+
+        <section class="card guide-section" id="start">
+            <h3 class="card-title">① 三分钟上手</h3>
+            <ol class="guide-list">
+                <li>打开 <b>打卡</b> 页，写一句今天打算学什么，点「打卡」。<b>每天只能打一次</b>。</li>
+                <li>在下面添加今天要做的事（例如「背 50 个单词」），做完打勾。</li>
+                <li>去 <b>工具 → 📖 背单词</b>，点「＋ 新建」，把单词表粘贴进去（或上传文件）保存。</li>
+                <li>点进这个单词本开始<b>背诵</b>或<b>考核</b>。一轮结束后，系统会<b>自动往今天的任务里记一条并算作完成</b>。</li>
+            </ol>
+            <p class="guide-note">
+                所以「完成任务 / 完成率」不会一直是 0 了——但前提是<b>当天已经打过卡</b>，任务才有地方记。
+            </p>
+        </section>
+
+        <section class="card guide-section" id="checkin">
+            <h3 class="card-title">② 打卡与任务</h3>
+            <ul class="guide-list">
+                <li><b>打卡</b>：每人每天一条，重复点会提示「今天已经打卡过了」。打卡会累计「连续天数」，
+                    中断一天后从 1 重新算。</li>
+                <li><b>任务</b>：在打卡后添加，可勾选完成 / 取消，也能删除。</li>
+                <li><b>学习自动记任务</b>：一轮背诵、考核或消灭错词结束时，会自动加一条<b>已完成</b>的任务，例如
+                    「📖 背单词：SAT（30 个）」「📝 考核：SAT（20 题 · 正确率 80%）」。
+                    当天没打卡的话就跳过，不会报错。</li>
+                <li><b>学习统计</b>：连续天数、打卡天数、完成任务数、完成率，都在打卡页顶部。</li>
+                <li><b>打卡历史</b>：往下看能看到最近每天的打卡与任务完成进度。</li>
+            </ul>
+        </section>
+
+        <section class="card guide-section" id="words">
+            <h3 class="card-title">③ 背单词</h3>
+
+            <p class="guide-sub">新建单词本</p>
+            <ul class="guide-list">
+                <li>把单词表<b>粘贴</b>进文本框即可，格式很宽松，会自动识别：
+                    <code>apple 苹果</code>、<code>apple,苹果</code>、<code>apple - 苹果</code>、
+                    <code>apple | 苹果</code>、<code>apple：苹果</code>、Tab 分隔、行首序号（<code>1. apple 苹果</code>）、
+                    <code>abandon vt. 放弃</code>，中文在前（<code>苹果 apple</code>）也能认。</li>
+                <li>也可以<b>上传文件</b>或直接拖进文本框：支持 PDF、Word（.docx）、图片（OCR 识别）、txt。
+                    解析<b>全在本地完成，文件不会上传到任何服务器</b>。</li>
+                <li>保存前可点「预览」核对、点「交换中英」纠正顺序；重复单词只保留第一条。</li>
+                <li><b>排列顺序</b>可选「文件顺序」或「字母顺序」；之后在单词列表页也能随时切换显示排序。</li>
+            </ul>
+
+            <p class="guide-sub">单词列表</p>
+            <ul class="guide-list">
+                <li>顶部可按状态筛选：<b>全部 / 错词 / 未背 / 认识 / 模糊 / 不认识</b>，数字是各状态的数量。</li>
+                <li><b>分页</b>每页 20 / 50 / 100 条（会记住你的选择）；也能直接在「跳至 __ 页」输入页码跳过去。</li>
+                <li>勾选若干单词后点「<b>全选本页</b>」只选当前页；再点「<b>考核选中</b>」就会跳到考核设置页，
+                    <b>范围自动变成「选中 N」、题量自动等于选中的数量</b>，你确认题型后点「开始考核」即可。</li>
+            </ul>
+
+            <p class="guide-sub">背诵</p>
+            <ul class="guide-list">
+                <li>点卡片翻开释义，再选 <b>认识 / 模糊 / 不认识</b>。</li>
+                <li>可以勾选「随机顺序」和「自动发音」；卡片上有音标，点 🔊 听美式发音。</li>
+            </ul>
+
+            <p class="guide-sub">考核</p>
+            <ul class="guide-list">
+                <li><b>题型</b>：<code>选择</code>（看词选义 / 看义选词）、<code>拼写</code>（看义拼词）、
+                    <code>填义</code>（看词写中文意思，自动判分）。</li>
+                <li><b>范围</b>：全部 / 未背 / 认识 / 模糊 / 不认识，或「选中 N」（上面说的考核选中）。</li>
+                <li><b>题量</b>：10 / 20 / 50 / 全部，也可以填「自定义题量」。</li>
+                <li><b>计时与限时</b>：开考就开始计时，题目上方显示已用时间，结束后结果里有「用时」。
+                    可选的「每题 10 秒」限时<b>默认关闭</b>，开了就每题独立倒计时，超时按答错算。</li>
+                <li><b>填义题判分</b>：自动比对，命中释义里任意一个义项就算对；连内置词典里同一个词的
+                    其它义项也算对（所以答近义词常常也能过）。判错时会给一个「<b>我答对了，算对</b>」按钮，
+                    点了就按答对算，不会因为一次误判拉低熟练度。</li>
+            </ul>
+
+            <p class="guide-sub">错词灭错</p>
+            <ul class="guide-list">
+                <li>「<b>错词</b>」页专门收拾答错过的词：答错过的词会进错词池，点「开始消灭错词」反复练，
+                    <b>连续答对 2 次</b>就算消灭。</li>
+                <li>答对一次熟练度 +1，答错清零并排到队尾继续练；中途可「结束本轮」。</li>
+                <li>消灭之后这些词<b>不会消失</b>——在单词列表的「错词」筛选里仍然能看到，并标着「已消灭」。</li>
+            </ul>
+
+            <p class="guide-sub">学习记录</p>
+            <ul class="guide-list">
+                <li>单词本列表右上角「📅 学习记录」：顶部是今日概览（今天背了多少、考核多少、正确率），
+                    下面按天汇总，点开任意一条能看到<b>具体背了哪些单词、每个词的结果</b>。</li>
+            </ul>
+        </section>
+
+        <section class="card guide-section" id="tools">
+            <h3 class="card-title">④ 学习工具</h3>
+            <ul class="guide-list">
+                <li>进入「工具」页会先看到四个功能的卡片，<b>点哪个才打开哪个</b>；左上角「← 全部工具」可以返回。</li>
+                <li><b>⏱ 计时器</b>：正计时，支持计次；切到别的页面也不会停。</li>
+                <li><b>⏳ 倒计时</b>：选 5 / 25 / 45 / 60 分钟或自定义，到点响铃提醒。</li>
+                <li><b>📖 背单词</b>：就是上一节的内容。</li>
+                <li><b>🔤 字典</b>：输入英文单词，显示<b>美音音标 + 中文释义</b>，点 🔊 可朗读。
+                    内置约 12.5 万条音标和 5.9 万条中文释义，<b>完全离线</b>（第一次打开要加载约 6MB，之后就快了）。</li>
+            </ul>
+        </section>
+
+        <section class="card guide-section" id="friends">
+            <h3 class="card-title">⑤ 好友与排行榜</h3>
+            <ul class="guide-list">
+                <li>在「好友」页输入对方<b>注册用的邮箱</b>即可精确添加（对方不需要同意）。</li>
+                <li>可以看到好友的打卡动态、给动态点赞；「排行榜」按打卡天数 / 连续天数 / 完成任务数 PK。</li>
+                <li>好友之间<b>只能看到打卡与任务</b>，单词本、学习记录、反馈都是私密的。</li>
+            </ul>
+        </section>
+
+        <section class="card guide-section" id="profile">
+            <h3 class="card-title">⑥ 个人中心与意见反馈</h3>
+            <ul class="guide-list">
+                <li>「我的」页可以改<b>头像、昵称、个性签名</b>，看自己的数据总览，并在这里<b>修改密码</b>。</li>
+                <li><b>主题</b>支持浅色 / 深色 / 跟随系统；右上角的 🌙 按钮可以快速切换。</li>
+                <li><b>💬 意见反馈</b>：写下用得不顺手的地方或想要的功能（联系方式可选），提交后能在下方
+                    看到自己提交过的历史记录，也可以删除。</li>
+            </ul>
+        </section>
+
+        <section class="card guide-section" id="faq">
+            <h3 class="card-title">⑦ 常见问题</h3>
+            <ul class="guide-list">
+                <li><b>我背了单词，为什么完成率还是 0？</b><br>
+                    需要先在「打卡」页<b>打卡</b>，学习记录才有地方记。打上卡后再背一轮，任务就会自动加上。</li>
+                <li><b>数据存在哪里？安全吗？</b><br>
+                    存在 Supabase（Postgres）里，账号密码和数据都只有你自己能读写；好友只能看到打卡与任务。</li>
+                <li><b>换手机 / 换浏览器怎么办？</b><br>
+                    用同一个邮箱密码登录即可，数据都在云端，不用迁移。</li>
+                <li><b>上传的单词表会上传到哪里吗？</b><br>
+                    不会。PDF / Word / 图片的解析全部在你的浏览器里完成，文件不出本机。</li>
+                <li><b>字典里查不到某个词？</b><br>
+                    中文词库只收了约 5.9 万个常用词，音标词典约 12.5 万条；生僻词、地名、人名大多不在范围内。</li>
+                <li><b>第一次打开字典很慢？</b><br>
+                    首次要加载约 6MB 词库，加载过一次后就完全离线、秒出。</li>
+                <li><b>忘记密码了？</b><br>
+                    站点不依赖邮件，暂时没法自助找回，请联系站长重置。</li>
+                <li><b>手机上怎么看？</b><br>
+                    直接用手机浏览器打开即可，底部有导航栏；也可以「添加到主屏幕」当 App 用。</li>
+            </ul>
+        </section>
+    </div>
+
+    <script src="vendor/supabase.js"></script>
+    <script type="module" src="js/guide.js"></script>
+</body>
+</html>
