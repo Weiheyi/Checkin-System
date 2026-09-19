@@ -58,6 +58,45 @@
         </section>
 
         <section class="card">
+            <h3 class="card-title">🎨 外观</h3>
+
+            <div class="setting-row">
+                <div>
+                    <div class="setting-label">头像图片</div>
+                    <div class="setting-desc">上传一张图片当头像，会盖过上面选的 emoji</div>
+                </div>
+                <div class="media-actions">
+                    <button type="button" class="btn-ghost" id="avatarUploadBtn">上传图片</button>
+                    <button type="button" class="btn-ghost hidden" id="avatarRemoveBtn">移除</button>
+                    <input type="file" id="avatarFile" class="file-input" accept="image/*">
+                </div>
+            </div>
+
+            <div class="setting-row">
+                <div>
+                    <div class="setting-label">自定义背景</div>
+                    <div class="setting-desc">登录后的所有页面都会用这张图当背景</div>
+                </div>
+                <div class="media-actions">
+                    <button type="button" class="btn-ghost" id="bgUploadBtn">上传图片</button>
+                    <button type="button" class="btn-ghost hidden" id="bgRemoveBtn">移除</button>
+                    <input type="file" id="bgFile" class="file-input" accept="image/*">
+                </div>
+            </div>
+
+            <div class="setting-row" id="bgOpacityRow" hidden>
+                <div>
+                    <div class="setting-label">背景透明度</div>
+                    <div class="setting-desc">调低一点，正文看着更清楚</div>
+                </div>
+                <div class="opacity-control">
+                    <input type="range" id="bgOpacity" min="0" max="100" step="5" aria-label="背景透明度">
+                    <span class="opacity-value" id="bgOpacityValue">100%</span>
+                </div>
+            </div>
+        </section>
+
+        <section class="card">
             <h3 class="card-title">📊 我的数据</h3>
             <div class="stats-grid">
                 <div class="stat-item">

@@ -50,7 +50,7 @@ export function showFormMessage(container, text, type = 'error') {
 
 /* ---------------- 展示辅助 ---------------- */
 
-// 头像规则：优先用用户选的 emoji，没有则退回昵称首字
+// 头像规则：优先用上传的图片，其次用户选的 emoji，最后退回昵称首字
 export function avatarLabel(user) {
     if (!user) return '学';
     return user.avatar_emoji || (user.nickname || user.email || '学').charAt(0);
@@ -58,8 +58,18 @@ export function avatarLabel(user) {
 
 export function paintAvatar(el, user) {
     if (!el) return;
-    el.textContent = avatarLabel(user);
-    el.classList.toggle('has-emoji', !!(user && user.avatar_emoji));
+
+    const url = user && user.avatar_url;
+    el.classList.toggle('has-image', !!url);
+    el.classList.toggle('has-emoji', !url && !!(user && user.avatar_emoji));
+
+    if (url) {
+        el.textContent = '';
+        el.style.backgroundImage = `url("${url}")`;
+    } else {
+        el.style.backgroundImage = '';
+        el.textContent = avatarLabel(user);
+    }
 }
 
 function dateKey(date) {

@@ -23,6 +23,12 @@ alter table public.profiles add column if not exists avatar_emoji text;
 alter table public.profiles add column if not exists bio text;
 alter table public.profiles add column if not exists updated_at timestamptz not null default now();
 
+-- 自定义头像与背景图：图片本体存在 Storage 的 media 桶里，这里只存 URL；
+-- background_opacity 是背景图的透明度（0~100）
+alter table public.profiles add column if not exists avatar_url text;
+alter table public.profiles add column if not exists background_url text;
+alter table public.profiles add column if not exists background_opacity smallint not null default 100;
+
 -- 打卡记录：每人每天一条
 create table if not exists public.checkins (
   id uuid primary key default gen_random_uuid(),
@@ -530,3 +536,32 @@ grant execute on function public.friend_feed(int)          to authenticated;
 grant execute on function public.my_stats()                to authenticated;
 grant execute on function public.start_study_session(text, uuid, text, int) to authenticated;
 grant execute on function public.record_word_review(uuid, uuid, text)       to authenticated;
+
+-- ============================================================
+-- 七、Storage：自定义头像与背景图
+-- ============================================================
+-- 一个公开桶，约定路径为 `<用户id>/avatar.jpg` 与 `<用户id>/background.jpg`。
+-- 「公开」只影响读取（知道链接就能看，头像本来也要给好友看）；
+-- 写入 / 覆盖 / 删除都只允许操作自己目录下的文件。
+insert into storage.buckets (id, name, public)
+values ('media', 'media', true)
+on conflict (id) do update set public = true;
+
+drop policy if exists "media: read" on storage.objects;
+create policy "media: read" on storage.objects
+  for select using (bucket_id = 'media');
+
+drop policy if exists "media: own insert" on storage.objects;
+create policy "media: own insert" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'media' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "media: own update" on storage.objects;
+create policy "media: own update" on storage.objects
+  for update to authenticated
+  using (bucket_id = 'media' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "media: own delete" on storage.objects;
+create policy "media: own delete" on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'media' and (storage.foldername(name))[1] = auth.uid()::text);

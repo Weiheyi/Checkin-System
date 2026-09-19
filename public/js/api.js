@@ -37,7 +37,7 @@ async function requireUser() {
 async function buildUser(user) {
     const { data } = await supabase
         .from('profiles')
-        .select('nickname, avatar_emoji, bio, created_at')
+        .select('nickname, avatar_emoji, avatar_url, background_url, background_opacity, bio, created_at')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -46,9 +46,29 @@ async function buildUser(user) {
         email: user.email,
         nickname: (data && data.nickname) || (user.email || '').split('@')[0] || '用户',
         avatar_emoji: (data && data.avatar_emoji) || '',
+        avatar_url: (data && data.avatar_url) || '',
+        background_url: (data && data.background_url) || '',
+        background_opacity: data && data.background_opacity != null ? data.background_opacity : 100,
         bio: (data && data.bio) || '',
         joined_at: (data && data.created_at) || user.created_at || null
     };
+}
+
+// 头像 / 背景图存在 Storage 的公开桶里，路径固定为 <用户id>/<kind>.jpg，
+// 覆盖同名文件后加时间戳，避免浏览器与 CDN 继续用旧图
+const MEDIA_BUCKET = 'media';
+
+async function uploadImage(kind, blob) {
+    const user = await requireUser();
+    const path = `${user.id}/${kind}.jpg`;
+
+    const { error } = await supabase.storage
+        .from(MEDIA_BUCKET)
+        .upload(path, blob, { upsert: true, contentType: 'image/jpeg', cacheControl: '31536000' });
+    if (error) fail(error.message, 500);
+
+    const { data } = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(path);
+    return `${data.publicUrl}?v=${Date.now()}`;
 }
 
 function mapCheckin(row) {
@@ -299,13 +319,16 @@ export const api = {
     },
 
     profile: {
-        async update({ nickname, avatar_emoji, bio }) {
+        async update({ nickname, avatar_emoji, bio, background_opacity }) {
             const user = await requireUser();
 
             const patch = {};
             if (nickname !== undefined) patch.nickname = nickname;
             if (avatar_emoji !== undefined) patch.avatar_emoji = avatar_emoji;
             if (bio !== undefined) patch.bio = bio;
+            if (background_opacity !== undefined) {
+                patch.background_opacity = Math.min(100, Math.max(0, Math.round(background_opacity)));
+            }
 
             const { data, error } = await supabase
                 .from('profiles')
@@ -319,7 +342,56 @@ export const api = {
             store.patchUser({
                 nickname: data.nickname,
                 avatar_emoji: data.avatar_emoji || '',
+                avatar_url: data.avatar_url || '',
+                background_url: data.background_url || '',
+                background_opacity: data.background_opacity != null ? data.background_opacity : 100,
                 bio: data.bio || ''
+            });
+            return { profile: data };
+        },
+
+        // 上传裁剪好的头像 / 背景图（kind: 'avatar' | 'background'）
+        async saveImage(kind, blob) {
+            const user = await requireUser();
+            const url = await uploadImage(kind, blob);
+            const patch = kind === 'avatar' ? { avatar_url: url } : { background_url: url };
+
+            const { data, error } = await supabase
+                .from('profiles')
+                .update(patch)
+                .eq('id', user.id)
+                .select()
+                .single();
+
+            if (error) fail(error.message, 500);
+
+            store.patchUser({
+                avatar_url: data.avatar_url || '',
+                background_url: data.background_url || ''
+            });
+            return { profile: data, url };
+        },
+
+        async clearImage(kind) {
+            const user = await requireUser();
+            const patch = kind === 'avatar' ? { avatar_url: '' } : { background_url: '' };
+
+            const { data, error } = await supabase
+                .from('profiles')
+                .update(patch)
+                .eq('id', user.id)
+                .select()
+                .single();
+
+            if (error) fail(error.message, 500);
+
+            // 顺手把桶里的文件删掉；删不掉也不影响资料本身
+            Promise.resolve(supabase.storage.from(MEDIA_BUCKET).remove([`${user.id}/${kind}.jpg`]))
+                .catch(() => {});
+
+            store.patchUser({
+                avatar_url: data.avatar_url || '',
+                background_url: data.background_url || ''
             });
             return { profile: data };
         },

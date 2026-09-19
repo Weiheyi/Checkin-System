@@ -3,7 +3,8 @@ import { store } from './store.js';
 import { AVATAR_CHOICES } from './config.js';
 import { getTheme, setTheme } from './theme.js';
 import { $, $$, toast, setLoading, paintAvatar } from './ui.js';
-import { initShell, setShellUser, logout } from './shell.js';
+import { initShell, setShellUser, setBackgroundOpacity, logout } from './shell.js';
+import { cropImage } from './image-crop.js';
 
 const els = {};
 let currentUser = null;
@@ -36,6 +37,16 @@ function cacheElements() {
     els.feedbackInput = $('#feedbackInput');
     els.feedbackContact = $('#feedbackContact');
     els.feedbackList = $('#feedbackList');
+
+    els.avatarUploadBtn = $('#avatarUploadBtn');
+    els.avatarRemoveBtn = $('#avatarRemoveBtn');
+    els.avatarFile = $('#avatarFile');
+    els.bgUploadBtn = $('#bgUploadBtn');
+    els.bgRemoveBtn = $('#bgRemoveBtn');
+    els.bgFile = $('#bgFile');
+    els.bgOpacityRow = $('#bgOpacityRow');
+    els.bgOpacity = $('#bgOpacity');
+    els.bgOpacityValue = $('#bgOpacityValue');
 }
 
 /* ---------------- 资料 ---------------- */
@@ -76,6 +87,15 @@ function applyUser(user) {
     els.nicknameInput.value = user.nickname || '';
     els.bioInput.value = user.bio || '';
     renderAvatarPicker();
+
+    // 外观：有图才显示「移除」，有背景才显示透明度滑块
+    els.avatarRemoveBtn.classList.toggle('hidden', !user.avatar_url);
+    els.bgRemoveBtn.classList.toggle('hidden', !user.background_url);
+    els.bgOpacityRow.hidden = !user.background_url;
+
+    const opacity = user.background_opacity == null ? 100 : user.background_opacity;
+    els.bgOpacity.value = String(opacity);
+    els.bgOpacityValue.textContent = `${opacity}%`;
 
     setShellUser(user);
 }
@@ -255,6 +275,59 @@ async function removeFeedback(item) {
     }
 }
 
+/* ---------------- 外观：头像图片与自定义背景 ---------------- */
+
+// 选文件 → 裁剪 → 上传 → 刷新资料
+function setupImageUpload({ button, input, kind, crop, done }) {
+    button.addEventListener('click', () => input.click());
+
+    input.addEventListener('change', async () => {
+        const file = input.files && input.files[0];
+        input.value = '';
+        if (!file) return;
+
+        let blob;
+        try {
+            blob = await cropImage(file, crop);
+        } catch (err) {
+            return toast(err.message, 'error');
+        }
+        if (!blob) return; // 用户取消了裁剪
+
+        setLoading(button, true);
+        try {
+            const { profile } = await api.profile.saveImage(kind, blob);
+            applyUser({
+                ...currentUser,
+                avatar_url: profile.avatar_url || '',
+                background_url: profile.background_url || ''
+            });
+            toast(done, 'success');
+        } catch (err) {
+            toast(err.message, 'error');
+        } finally {
+            setLoading(button, false);
+        }
+    });
+}
+
+async function removeImage(kind, button) {
+    setLoading(button, true);
+    try {
+        const { profile } = await api.profile.clearImage(kind);
+        applyUser({
+            ...currentUser,
+            avatar_url: profile.avatar_url || '',
+            background_url: profile.background_url || ''
+        });
+        toast('已移除', 'success');
+    } catch (err) {
+        toast(err.message, 'error');
+    } finally {
+        setLoading(button, false);
+    }
+}
+
 /* ---------------- 初始化 ---------------- */
 
 function bindEvents() {
@@ -279,6 +352,41 @@ function bindEvents() {
     });
 
     els.logoutSetting.addEventListener('click', logout);
+
+    // 外观：头像 / 背景上传与裁剪、背景透明度
+    setupImageUpload({
+        button: els.avatarUploadBtn,
+        input: els.avatarFile,
+        kind: 'avatar',
+        crop: { aspect: 1, outputWidth: 320, title: '裁剪头像' },
+        done: '头像已更新'
+    });
+    setupImageUpload({
+        button: els.bgUploadBtn,
+        input: els.bgFile,
+        kind: 'background',
+        crop: { aspect: 16 / 9, outputWidth: 1600, quality: 0.75, title: '裁剪背景' },
+        done: '背景已更新'
+    });
+
+    els.avatarRemoveBtn.addEventListener('click', () => removeImage('avatar', els.avatarRemoveBtn));
+    els.bgRemoveBtn.addEventListener('click', () => removeImage('background', els.bgRemoveBtn));
+
+    // 拖动时先本地预览，松手才写库，避免一路拖一路发请求
+    els.bgOpacity.addEventListener('input', () => {
+        const value = Number(els.bgOpacity.value);
+        els.bgOpacityValue.textContent = `${value}%`;
+        setBackgroundOpacity(value);
+    });
+    els.bgOpacity.addEventListener('change', async () => {
+        const value = Number(els.bgOpacity.value);
+        try {
+            await api.profile.update({ background_opacity: value });
+            currentUser = { ...currentUser, background_opacity: value };
+        } catch (err) {
+            toast(err.message, 'error');
+        }
+    });
 }
 
 async function init() {

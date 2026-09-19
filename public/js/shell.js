@@ -120,9 +120,40 @@ function maybeShowGuideTip(active) {
 }
 
 export function setShellUser(user) {
+    applyBackground(user);
     if (!els.avatar) return;
     paintAvatar(els.avatar, user);
     els.name.textContent = user.nickname || user.email || '用户';
+}
+
+// 自定义背景：全站一张图，铺满视口垫在内容下面，透明度由用户设置
+function applyBackground(user) {
+    const url = user && user.background_url;
+    const existing = document.getElementById('appBg');
+
+    if (!url) {
+        if (existing) existing.remove();
+        return;
+    }
+
+    let layer = existing;
+    if (!layer) {
+        layer = document.createElement('div');
+        layer.id = 'appBg';
+        layer.className = 'app-bg';
+        document.body.prepend(layer);
+    }
+
+    layer.style.backgroundImage = `url("${url}")`;
+    const opacity = user.background_opacity == null ? 100 : user.background_opacity;
+    setBackgroundOpacity(opacity);
+}
+
+// 调整背景透明度（个人中心的滑块用它做即时预览）
+export function setBackgroundOpacity(value) {
+    const layer = document.getElementById('appBg');
+    if (!layer) return;
+    layer.style.opacity = String(Math.min(100, Math.max(0, value)) / 100);
 }
 
 export function setShellSub(text) {
