@@ -196,9 +196,11 @@ export function cropImage(file, { aspect = 1, outputWidth = 512, quality = 0.85,
 
                 const ctx = canvas.getContext('2d');
                 ctx.imageSmoothingQuality = 'high';
+                // 取景框 (0,0) 对应原图坐标 (-x/scale, -y/scale)：x 是负的，这里必须取负，
+                // 否则源矩形会跑到图片外面，裁出来的图边上会缺一条（JPEG 里就是黑的）
                 ctx.drawImage(
                     img,
-                    state.x / state.scale, state.y / state.scale, state.vw / state.scale, state.vh / state.scale,
+                    -state.x / state.scale, -state.y / state.scale, state.vw / state.scale, state.vh / state.scale,
                     0, 0, outW, outH
                 );
 
