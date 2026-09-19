@@ -1234,10 +1234,9 @@ button {
 
 .avatar-picker {
     display: grid;
-    grid-template-columns: repeat(6, 1fr);
+    /* 按格子大小自动排：窄屏 4 列左右，宽屏一路排满整行，不再留一大片空白 */
+    grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
     gap: var(--space-2);
-    /* 宽屏上别把头像格子撑得又大又空，按手机上的尺寸封顶 */
-    max-width: 360px;
 }
 
 .avatar-choice {
@@ -1248,7 +1247,7 @@ button {
     border: 2px solid var(--border);
     background: var(--bg);
     border-radius: var(--radius-md);
-    font-size: 18px;
+    font-size: 30px;
     cursor: pointer;
     transition: all var(--transition);
 }
@@ -2393,6 +2392,26 @@ button {
     margin-bottom: var(--space-3);
 }
 
+/* ---- 搜单词：定位到词在第几页 ---- */
+.word-search {
+    display: flex;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+}
+
+.word-search-hint {
+    margin-bottom: var(--space-3);
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-muted);
+    overflow-wrap: break-word;
+}
+
+.word-search-hit {
+    font-weight: 600;
+    color: var(--color-primary);
+}
+
 .word-list {
     list-style: none;
 }
@@ -2405,6 +2424,15 @@ button {
     margin-bottom: var(--space-2);
     background: var(--bg);
     border-radius: var(--radius-sm);
+}
+
+/* 搜到的词标出来，当前这个再深一点，翻页时一眼能看到 */
+.word-item.is-found {
+    box-shadow: inset 0 0 0 2px var(--color-primary);
+}
+
+.word-item.is-focus {
+    background: var(--color-primary-soft);
 }
 
 .word-main {
@@ -2691,6 +2719,8 @@ button {
 /* ---- 学习记录 ---- */
 .title-actions {
     display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     gap: var(--space-1);
 }
 
@@ -2993,10 +3023,6 @@ button {
         grid-template-columns: repeat(2, 1fr);
     }
 
-    .avatar-picker {
-        grid-template-columns: repeat(4, 1fr);
-    }
-
     .toast-host {
         top: 12px;
         left: 12px;
@@ -3022,5 +3048,114 @@ button {
         animation-duration: 0.01ms !important;
         animation-iteration-count: 1 !important;
         transition-duration: 0.01ms !important;
+    }
+}
+
+/* ========== 导出 PDF ========== */
+
+/* 报告平时是隐藏的：点「导出 PDF」时生成一份挂在 body 下，再调浏览器打印
+   （打印窗口里目标选「另存为 PDF」即可保存，中文和排版都由浏览器负责，不额外引第三方库） */
+.print-report {
+    display: none;
+    color: #1a202c;
+    font-size: 12px;
+    line-height: 1.6;
+    /* 表头底色、答错标记在打印时要保留 */
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+}
+
+.print-report h1 {
+    margin: 0;
+    font-size: 21px;
+}
+
+.print-report h2 {
+    margin: 20px 0 8px;
+    padding-bottom: 4px;
+    font-size: 15px;
+    border-bottom: 1px solid #cbd5e0;
+}
+
+.print-report h3 {
+    margin: 14px 0 6px;
+    font-size: 13px;
+}
+
+.print-report .print-meta,
+.print-report .print-note {
+    margin: 4px 0;
+    color: #5b6b7c;
+    font-size: 11px;
+}
+
+.print-report .print-summary {
+    margin: 12px 0;
+    padding: 8px 12px;
+    background: #f4f5fb;
+    border-radius: 6px;
+}
+
+.print-report .print-summary p {
+    margin: 0;
+}
+
+.print-report .print-table {
+    width: 100%;
+    margin: 6px 0 12px;
+    border-collapse: collapse;
+    font-size: 11px;
+}
+
+.print-report .print-table th,
+.print-report .print-table td {
+    padding: 4px 6px;
+    border: 1px solid #cbd5e0;
+    text-align: left;
+    vertical-align: top;
+    overflow-wrap: break-word;
+}
+
+.print-report .print-table th {
+    background: #eef1f7;
+    font-weight: 700;
+}
+
+/* 别把一行拆到两页 */
+.print-report .print-table tr {
+    break-inside: avoid;
+}
+
+.print-report .print-logs {
+    margin-bottom: 10px;
+    font-size: 10px;
+}
+
+/* 答错的行标出来，翻打印稿时好找 */
+.print-report .print-logs tr.print-bad td {
+    background: #fdecea;
+    color: #9b1c13;
+}
+
+.print-report .print-session {
+    margin-bottom: 12px;
+}
+
+.print-report .print-session-head {
+    margin-bottom: 4px;
+}
+
+@media print {
+    /* 只打印报告本身：顶栏、底部导航、背景图都收起来 */
+    body.print-report-open > *:not(.print-report) {
+        display: none !important;
+    }
+
+    body.print-report-open .print-report {
+        display: block;
+    }
+
+    @page {
+        margin: 14mm 12mm;
     }
 }

@@ -511,6 +511,9 @@ const wordsState = {
     selected: new Set()
 };
 
+// 搜单词：只在当前筛选 + 排序的结果里定位，报出的页码和列表显示的一致
+const wordSearch = { query: '', matches: [], index: 0 };
+
 // sessionPromise：本轮的学习记录会话 id，在第一次作答时才创建（没作答就不会留下空记录）
 const study = { queue: [], index: 0, revealed: false, result: { known: 0, vague: 0, again: 0 }, sessionPromise: null };
 
@@ -771,6 +774,7 @@ async function openBook(id) {
         wordsState.filter = 'all';
         wordsState.page = 1;
         wordsState.selected.clear();
+        resetSearch();
         // 「考核选中」的词池属于上一本书，换本子就作废
         quiz.override = null;
         if (quiz.scope === 'selected') quiz.scope = 'all';
@@ -841,9 +845,18 @@ function renderWordList() {
 
     const fragment = document.createDocumentFragment();
 
+    // 搜索命中的词在列表里标出来，当前定位的那一个再深一点
+    const found = new Set(wordSearch.matches.map(hit => hit.word.id));
+    const focus = wordSearch.matches[wordSearch.index];
+
     shown.forEach(word => {
         const li = document.createElement('li');
         li.className = 'word-item';
+        li.dataset.wordId = word.id;
+        if (found.has(word.id)) {
+            li.classList.add('is-found');
+            if (focus && focus.word.id === word.id) li.classList.add('is-focus');
+        }
 
         const check = document.createElement('input');
         check.type = 'checkbox';
@@ -904,6 +917,7 @@ function renderWordList() {
 
     els.wordList.replaceChildren(fragment);
     renderWordPager(visible.length, pages);
+    renderSearchHint();
 }
 
 // 当前页要渲染的区间；顺带把页码夹回合法范围（筛选、排序、删词之后总数都会变）
@@ -950,6 +964,121 @@ function goToPage(page) {
     }
 }
 
+/* ---------------- 搜单词：告诉用户这个词在第几页 ---------------- */
+
+// 命中的词按「完全相同 → 开头 → 包含 → 释义包含」排，最想要的排最前面；
+// index 是它在整个筛选结果里的下标，用它算页码
+function searchWords(query) {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return [];
+
+    const exact = [];
+    const prefix = [];
+    const partial = [];
+    const byMeaning = [];
+
+    visibleWords().forEach((word, index) => {
+        const term = (word.term || '').toLowerCase();
+        const hit = { word, index };
+        if (term === needle) exact.push(hit);
+        else if (term.startsWith(needle)) prefix.push(hit);
+        else if (term.includes(needle)) partial.push(hit);
+        else if ((word.meaning || '').toLowerCase().includes(needle)) byMeaning.push(hit);
+    });
+
+    return [...exact, ...prefix, ...partial, ...byMeaning];
+}
+
+function searchPageOf(hit) {
+    return Math.floor(hit.index / wordsState.pageSize) + 1;
+}
+
+// 筛选 / 排序 / 每页条数变了：重新算命中，尽量还停在原来那个词上
+function refreshSearch() {
+    const current = wordSearch.matches[wordSearch.index];
+    wordSearch.matches = searchWords(wordSearch.query);
+    const stay = current ? wordSearch.matches.findIndex(hit => hit.word.id === current.word.id) : -1;
+    wordSearch.index = stay >= 0 ? stay : 0;
+}
+
+// 跳到命中的那一页并高亮；没有命中就只重画（顺便清掉高亮）
+function focusMatch() {
+    const hit = wordSearch.matches[wordSearch.index];
+    if (hit) wordsState.page = searchPageOf(hit);
+    renderWordList();
+    if (hit) scrollToWord(hit.word.id);
+}
+
+function scrollToWord(id) {
+    const row = els.wordList.querySelector(`[data-word-id="${id}"]`);
+    if (row) row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
+// 输入框内容变了：从头开始找
+function runSearch() {
+    wordSearch.query = els.wordSearch.value;
+    wordSearch.index = 0;
+    refreshSearch();
+    focusMatch();
+}
+
+// 回车 /「下一个」：在命中结果里循环
+function stepSearch(step) {
+    const total = wordSearch.matches.length;
+    if (!total) return;
+    wordSearch.index = (wordSearch.index + step + total) % total;
+    focusMatch();
+}
+
+function renderSearchHint() {
+    const query = wordSearch.query.trim();
+    els.wordSearchNext.hidden = wordSearch.matches.length < 2;
+    els.wordSearchHint.replaceChildren();
+
+    if (!query) {
+        els.wordSearchHint.hidden = true;
+        return;
+    }
+
+    els.wordSearchHint.hidden = false;
+
+    if (!wordSearch.matches.length) {
+        // 找不到多半是筛选把词挡住了，提醒一下
+        const scope = wordsState.filter === 'all' ? '' : `（当前筛选：${FILTER_LABELS[wordsState.filter]}）`;
+        els.wordSearchHint.textContent = `没有找到「${query}」${scope}，换个词或切到「全部」试试`;
+        return;
+    }
+
+    const hit = wordSearch.matches[wordSearch.index];
+    const total = wordSearch.matches.length;
+
+    const where = document.createElement('span');
+    where.className = 'word-search-hit';
+    where.textContent = `「${hit.word.term}」在第 ${searchPageOf(hit)} 页`;
+
+    let tail = '';
+    if (total > 1) tail = ` · 匹配 ${total} 个，当前第 ${wordSearch.index + 1} 个（回车看下一个）`;
+    else if (wordsState.filter !== 'all') tail = ` · 当前筛选：${FILTER_LABELS[wordsState.filter]}`;
+
+    els.wordSearchHint.append(where, document.createTextNode(tail));
+}
+
+// 换本子：搜索框和结果一起清掉
+function resetSearch() {
+    wordSearch.query = '';
+    wordSearch.matches = [];
+    wordSearch.index = 0;
+    if (els.wordSearch) els.wordSearch.value = '';
+    renderSearchHint();
+}
+
+// 筛选 / 排序 / 每页条数变了：带着搜索结果一起重画
+function refreshWordList() {
+    refreshSearch();
+    if (wordSearch.query.trim()) focusMatch();
+    else renderWordList();
+}
+
 // 只选中当前这一页显示的单词，不是整个筛选结果
 function selectCurrentPage() {
     const visible = visibleWords();
@@ -969,7 +1098,7 @@ async function removeWord(word) {
         wordsState.words = wordsState.words.filter(item => item.id !== word.id);
         wordsState.selected.delete(word.id);
         wordsState.current.wordCount = wordsState.words.length;
-        renderWordList();
+        refreshWordList();
         renderDetailStats();
     } catch (err) {
         toast(err.message, 'error');
@@ -2396,6 +2525,311 @@ function renderSessionLogs(host, logs, mode) {
     host.appendChild(fragment);
 }
 
+/* ---------------- 导出学习记录 ---------------- */
+
+// 下载文件：Blob + 临时 <a download>，和头像裁剪那边用 objectURL 的做法一致
+function downloadText(filename, text, type) {
+    const url = URL.createObjectURL(new Blob([text], { type }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    // 下载是异步的，立刻回收会把文件掐断，留一会儿再释放
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+
+function csvCell(value) {
+    const text = value === null || value === undefined ? '' : String(value);
+    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function downloadCsv(filename, rows) {
+    // 开头加 BOM，Excel 打开中文才不乱码
+    const text = `\ufeff${rows.map(row => row.map(csvCell).join(',')).join('\r\n')}`;
+    downloadText(filename, text, 'text/csv;charset=utf-8');
+}
+
+function formatRecordTime(iso) {
+    if (!iso) return '';
+    const date = new Date(iso);
+    return `${dayKeyOf(date)} ${formatClock(iso)}`;
+}
+
+function formatStamp(date = new Date()) {
+    return `${dayKeyOf(date)} ${formatClock(date)}`;
+}
+
+const WRONG_WORD_COLUMNS = ['单词', '释义', '错误次数', '正确次数', '复习次数', '最近结果', '最近复习时间', '单词本'];
+
+// 错词表的数据行：CSV 和 PDF 共用，少写一份
+function wrongWordRows(words, books) {
+    const bookNames = new Map(books.map(book => [book.id, book.name]));
+
+    return words.map(word => [
+        word.term,
+        word.meaning || '',
+        word.wrong_count,
+        word.correct_count,
+        word.review_count,
+        STATUS_LABELS[word.last_result] || '未背',
+        formatRecordTime(word.last_reviewed_at),
+        bookNames.get(word.book_id) || ''
+    ]);
+}
+
+async function loadWrongWords() {
+    const [words, books] = await Promise.all([api.wordbooks.wrongWords(), api.wordbooks.list()]);
+    return { words, rows: wrongWordRows(words, books) };
+}
+
+// 导出所有答错过的单词（跨单词本）以及各自错了几次
+async function exportWrongCsv() {
+    setLoading(els.recordsCsv, true);
+
+    try {
+        const { words, rows } = await loadWrongWords();
+
+        if (!words.length) {
+            toast('还没有答错过的单词', 'info');
+            return;
+        }
+
+        downloadCsv(`错词记录-${dayKeyOf(new Date())}.csv`, [WRONG_WORD_COLUMNS, ...rows]);
+        toast(`已导出 ${words.length} 个错词`, 'success');
+    } catch (err) {
+        toast(err.message, 'error');
+    } finally {
+        setLoading(els.recordsCsv, false);
+    }
+}
+
+/* ---------------- 导出 PDF ---------------- */
+
+// 逐词明细拉太多会慢，只给最近这么多次会话排明细，更早的看按天汇总
+const PRINT_DETAIL_SESSIONS = 80;
+// 明细总行数上限，防止一本上千词的背诵把报告撑爆
+const PRINT_DETAIL_ROWS = 8000;
+const PRINT_CONCURRENCY = 4;
+const RECORD_KIND_LABELS = { all: '全部', study: '背诵', quiz: '考核' };
+
+function printEl(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined && text !== null) node.textContent = text;
+    return node;
+}
+
+// 第一行当表头，其余当数据
+function printTable(headers, rows, className) {
+    const table = printEl('table', className ? `print-table ${className}` : 'print-table');
+
+    const head = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    headers.forEach(text => headRow.appendChild(printEl('th', null, text)));
+    head.appendChild(headRow);
+
+    const body = document.createElement('tbody');
+    rows.forEach(cells => {
+        const row = document.createElement('tr');
+        cells.forEach(cell => row.appendChild(printEl('td', null, cell)));
+        body.appendChild(row);
+    });
+
+    table.append(head, body);
+    return table;
+}
+
+function showExportStatus(text) {
+    els.recordsExportStatus.textContent = text;
+    els.recordsExportStatus.hidden = false;
+}
+
+function hideExportStatus() {
+    els.recordsExportStatus.hidden = true;
+}
+
+// 按并发上限一批批拉每次会话的逐词明细，顺便报进度
+async function loadSessionLogs(sessions, onProgress) {
+    const logs = new Map();
+    const queue = sessions.slice();
+    let done = 0;
+
+    async function worker() {
+        while (queue.length) {
+            const session = queue.shift();
+            try {
+                logs.set(session.id, await api.wordbooks.sessionLogs(session.id));
+            } catch {
+                // 单条明细读失败不影响整份报告
+                logs.set(session.id, null);
+            }
+            done += 1;
+            onProgress(done, sessions.length);
+        }
+    }
+
+    const workers = Math.min(PRINT_CONCURRENCY, queue.length || 1);
+    await Promise.all(Array.from({ length: workers }, worker));
+    return logs;
+}
+
+function printSessionBlock(session, sessionLogs, budget) {
+    const box = printEl('div', 'print-session');
+
+    const head = printEl('div', 'print-session-head');
+    head.appendChild(printEl('b', null, formatClock(session.createdAt)));
+    head.appendChild(document.createTextNode(
+        ` ${session.mode === 'quiz' ? '考核' : '背诵'} · ${session.bookName || '（单词本已删除）'} · ${sessionMetaText(session)}`
+    ));
+    box.appendChild(head);
+
+    // undefined = 这次不在明细范围内
+    if (sessionLogs === undefined) return box;
+
+    if (sessionLogs === null) {
+        box.appendChild(printEl('p', 'print-note', '（这次明细读取失败）'));
+        return box;
+    }
+
+    if (!sessionLogs.length) {
+        box.appendChild(printEl('p', 'print-note', '（这次没有留下单词明细）'));
+        return box;
+    }
+
+    if (budget.left <= 0) {
+        box.appendChild(printEl('p', 'print-note', `（共 ${sessionLogs.length} 个词，明细已到上限，不再展开）`));
+        return box;
+    }
+
+    const shown = sessionLogs.slice(0, budget.left);
+    budget.left -= shown.length;
+
+    const rows = shown.map(log => [
+        log.term,
+        log.meaning || '—',
+        session.mode === 'quiz'
+            ? (log.result === 'known' ? '答对' : '答错')
+            : (STATUS_LABELS[log.result] || log.result)
+    ]);
+
+    const table = printTable(['单词', '释义', '结果'], rows, 'print-logs');
+    [...table.tBodies[0].rows].forEach((row, index) => {
+        if (shown[index].result === 'again') row.classList.add('print-bad');
+    });
+    box.appendChild(table);
+
+    if (shown.length < sessionLogs.length) {
+        box.appendChild(printEl('p', 'print-note', `（本次共 ${sessionLogs.length} 个词，这里只列了前 ${shown.length} 个）`));
+    }
+
+    return box;
+}
+
+function buildPrintReport({ sessions, logs, words, rows, detailCount, budget }) {
+    const report = printEl('div', 'print-report');
+
+    const head = printEl('div', 'print-head');
+    head.appendChild(printEl('h1', null, '学习记录'));
+    head.appendChild(printEl('p', 'print-meta',
+        `导出时间 ${formatStamp()} · 范围：${RECORD_KIND_LABELS[recordsState.kind] || '全部'} · 共 ${sessions.length} 条记录`));
+    report.appendChild(head);
+
+    // 概览
+    const studyCount = sessions
+        .filter(session => session.mode === 'study')
+        .reduce((sum, session) => sum + sessionAnswered(session), 0);
+    const quizzes = sessions.filter(session => session.mode === 'quiz');
+    const quizCount = quizzes.reduce((sum, session) => sum + sessionAnswered(session), 0);
+    const quizCorrect = quizzes.reduce((sum, session) => sum + session.correct, 0);
+    const rate = quizCount ? Math.round((quizCorrect / quizCount) * 100) : 0;
+    const misses = words.reduce((sum, word) => sum + word.wrong_count, 0);
+
+    const overview = printEl('div', 'print-summary');
+    overview.appendChild(printEl('p', null, `共 ${sessions.length} 次学习记录 · 背诵 ${studyCount} 个 · 考核 ${quizCount} 题（正确率 ${rate}%）`));
+    overview.appendChild(printEl('p', null, `答错过的单词 ${words.length} 个 · 累计答错 ${misses} 次`));
+    report.appendChild(overview);
+
+    // 一、错词表
+    report.appendChild(printEl('h2', null, `一、错词表（${words.length} 个）`));
+    report.appendChild(words.length
+        ? printTable(WRONG_WORD_COLUMNS, rows)
+        : printEl('p', 'print-note', '还没有答错过的单词。'));
+
+    // 二、学习记录
+    report.appendChild(printEl('h2', null, '二、学习记录（按天）'));
+
+    if (!sessions.length) {
+        report.appendChild(printEl('p', 'print-note', '这个范围内还没有记录。'));
+        return report;
+    }
+
+    // 接口已按时间倒序返回，顺序扫一遍即可按天分组
+    const groups = new Map();
+    sessions.forEach(session => {
+        const key = dayKeyOf(new Date(session.createdAt));
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(session);
+    });
+
+    groups.forEach((items, key) => {
+        report.appendChild(printEl('h3', null, `${formatDayLabel(key)}（${items.length} 次）`));
+        items.forEach(session => report.appendChild(printSessionBlock(session, logs.get(session.id), budget)));
+    });
+
+    if (sessions.length > detailCount) {
+        report.appendChild(printEl('p', 'print-note',
+            `逐词明细只列最近 ${detailCount} 次，更早的记录请看上面的按天汇总。`));
+    }
+
+    return report;
+}
+
+// 报告生成好挂到 body 下，用浏览器打印；在打印窗口里把目标选成「另存为 PDF」即可
+async function exportLearningPdf() {
+    const sessions = recordsState.sessions.filter(
+        session => recordsState.kind === 'all' || session.mode === recordsState.kind
+    );
+
+    setLoading(els.recordsPdf, true);
+    showExportStatus('正在整理数据…');
+
+    try {
+        const { words, rows } = await loadWrongWords();
+
+        const detailed = sessions.filter(sessionAnswered).slice(0, PRINT_DETAIL_SESSIONS);
+        const logs = await loadSessionLogs(detailed, (done, total) => {
+            showExportStatus(`正在读取逐词明细 ${done}/${total}…`);
+        });
+
+        const report = buildPrintReport({
+            sessions, logs, words, rows,
+            detailCount: detailed.length,
+            budget: { left: PRINT_DETAIL_ROWS }
+        });
+
+        document.querySelectorAll('.print-report').forEach(node => node.remove());
+        document.body.appendChild(report);
+
+        // 打完（或取消）再放行页面，免得把界面一起打进去
+        const cleanup = () => {
+            document.body.classList.remove('print-report-open');
+            window.removeEventListener('afterprint', cleanup);
+        };
+        window.addEventListener('afterprint', cleanup);
+
+        document.body.classList.add('print-report-open');
+        hideExportStatus();
+        window.print();
+    } catch (err) {
+        toast(err.message, 'error');
+    } finally {
+        setLoading(els.recordsPdf, false);
+        hideExportStatus();
+    }
+}
+
 /* ---------------- 离线字典 ---------------- */
 
 // 音标来自内置的美音音标词典，中文释义来自内置的 ECDICT 裁剪词库，都完全离线
@@ -2627,6 +3061,9 @@ function cacheElements() {
 
     els.recordsBtn = $('#recordsBtn');
     els.recordsBack = $('#recordsBack');
+    els.recordsPdf = $('#recordsPdf');
+    els.recordsCsv = $('#recordsCsv');
+    els.recordsExportStatus = $('#recordsExportStatus');
     els.recordsToday = $('#recordsToday');
     els.recordsFilter = $('#recordsFilter');
     els.recordList = $('#recordList');
@@ -2716,6 +3153,9 @@ function cacheElements() {
     els.wordEmpty = $('#wordEmpty');
     els.wordFilter = $('#wordFilter');
     els.wordSortGroup = $('#wordSortGroup');
+    els.wordSearch = $('#wordSearch');
+    els.wordSearchNext = $('#wordSearchNext');
+    els.wordSearchHint = $('#wordSearchHint');
     els.selectCount = $('#selectCount');
     els.selectAllBtn = $('#selectAllBtn');
     els.selectClearBtn = $('#selectClearBtn');
@@ -2783,6 +3223,8 @@ function bindEvents() {
     // 学习记录
     els.recordsBtn.addEventListener('click', openRecords);
     els.recordsBack.addEventListener('click', () => showWordView('home'));
+    els.recordsPdf.addEventListener('click', exportLearningPdf);
+    els.recordsCsv.addEventListener('click', exportWrongCsv);
     els.recordsFilter.addEventListener('click', e => {
         const btn = e.target.closest('button[data-kind]');
         if (!btn) return;
@@ -2945,7 +3387,7 @@ function bindEvents() {
         if (!btn) return;
         wordsState.filter = btn.dataset.filter;
         wordsState.page = 1;
-        renderWordList();
+        refreshWordList();
     });
     // 排序切换会记住选择
     els.wordSortGroup.addEventListener('click', e => {
@@ -2955,7 +3397,7 @@ function bindEvents() {
         saveListSort(wordsState.listSort);
         syncSortSwitch(els.wordSortGroup, wordsState.listSort);
         wordsState.page = 1;
-        renderWordList();
+        refreshWordList();
     });
     // 分页：每页条数同样记住
     els.pageSizeGroup.addEventListener('click', e => {
@@ -2964,8 +3406,23 @@ function bindEvents() {
         wordsState.pageSize = Number(btn.dataset.size);
         savePageSize(wordsState.pageSize);
         wordsState.page = 1;
-        renderWordList();
+        refreshWordList();
     });
+
+    // 搜单词：停顿一下再定位，免得边打字边跳页；回车直接看下一个
+    let searchTimer = null;
+    els.wordSearch.addEventListener('input', () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(runSearch, 250);
+    });
+    els.wordSearch.addEventListener('keydown', e => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        clearTimeout(searchTimer);
+        if (els.wordSearch.value === wordSearch.query) stepSearch(1);
+        else runSearch();
+    });
+    els.wordSearchNext.addEventListener('click', () => stepSearch(1));
     els.pagePrev.addEventListener('click', () => goToPage(wordsState.page - 1));
     els.pageNext.addEventListener('click', () => goToPage(wordsState.page + 1));
 

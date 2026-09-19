@@ -121,8 +121,13 @@
             <div id="wordRecords" hidden>
                 <div class="card-title-row">
                     <h3 class="card-title">📅 学习记录</h3>
-                    <button class="btn-ghost" id="recordsBack" type="button">返回</button>
+                    <div class="title-actions">
+                        <button class="btn-ghost" id="recordsPdf" type="button">📄 导出 PDF</button>
+                        <button class="btn-ghost" id="recordsCsv" type="button">⬇ CSV</button>
+                        <button class="btn-ghost" id="recordsBack" type="button">返回</button>
+                    </div>
                 </div>
+                <p class="setting-desc" id="recordsExportStatus" hidden></p>
                 <div class="word-stats" id="recordsToday"></div>
                 <div class="filter-row" id="recordsFilter">
                     <button type="button" data-kind="all" class="active">全部</button>
@@ -304,6 +309,13 @@
                         <button class="btn-ghost" id="resetProgressBtn" type="button">重置进度</button>
                         <button class="btn-ghost" id="deleteBookBtn" type="button">删除本子</button>
                     </div>
+                    <div class="word-search">
+                        <input type="search" class="task-input" id="wordSearch" autocomplete="off"
+                               autocapitalize="off" autocorrect="off" spellcheck="false"
+                               placeholder="搜单词，直接跳到它在的那一页">
+                        <button class="btn-ghost" id="wordSearchNext" type="button" hidden>下一个</button>
+                    </div>
+                    <p class="word-search-hint" id="wordSearchHint" hidden></p>
                     <div class="setting-row">
                         <div class="setting-label">排序</div>
                         <div class="switch-group" id="wordSortGroup" role="group" aria-label="排序方式">

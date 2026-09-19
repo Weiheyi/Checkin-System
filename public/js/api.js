@@ -730,6 +730,32 @@ export const api = {
             return all;
         },
 
+        // 导出用：这个用户所有答错过的词（跨单词本），错得多的排前面
+        async wrongWords() {
+            const user = await requireUser();
+            const all = [];
+
+            for (let from = 0; ; from += WORDS_PAGE_SIZE) {
+                const { data, error } = await supabase
+                    .from('words')
+                    .select('id, book_id, term, meaning, mastery, review_count, correct_count, wrong_count, last_result, last_reviewed_at')
+                    .eq('user_id', user.id)
+                    .gt('wrong_count', 0)
+                    .order('wrong_count', { ascending: false })
+                    // 错误次数相同的按 id 兜底，分页才不会漏行或重复
+                    .order('id', { ascending: true })
+                    .range(from, from + WORDS_PAGE_SIZE - 1);
+
+                if (error) fail(error.message, 500);
+
+                const rows = data || [];
+                all.push(...rows);
+                if (rows.length < WORDS_PAGE_SIZE) break;
+            }
+
+            return all.map(mapWord);
+        },
+
         // 清空一本单词本的背诵进度
         async resetProgress(bookId) {
             await requireUser();
