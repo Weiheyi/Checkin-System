@@ -47,6 +47,9 @@ function cacheElements() {
     els.bgUploadBtn = $('#bgUploadBtn');
     els.bgRemoveBtn = $('#bgRemoveBtn');
     els.bgFile = $('#bgFile');
+    els.bgMobileUploadBtn = $('#bgMobileUploadBtn');
+    els.bgMobileRemoveBtn = $('#bgMobileRemoveBtn');
+    els.bgMobileFile = $('#bgMobileFile');
     els.bgOpacityRow = $('#bgOpacityRow');
     els.bgOpacity = $('#bgOpacity');
     els.bgOpacityValue = $('#bgOpacityValue');
@@ -94,7 +97,8 @@ function applyUser(user) {
     // 外观：有图才显示「移除」，有背景才显示透明度滑块
     els.avatarRemoveBtn.classList.toggle('hidden', !user.avatar_url);
     els.bgRemoveBtn.classList.toggle('hidden', !user.background_url);
-    els.bgOpacityRow.hidden = !user.background_url;
+    els.bgMobileRemoveBtn.classList.toggle('hidden', !user.background_mobile_url);
+    els.bgOpacityRow.hidden = !(user.background_url || user.background_mobile_url);
 
     const opacity = user.background_opacity == null ? 100 : user.background_opacity;
     els.bgOpacity.value = String(opacity);
@@ -306,7 +310,17 @@ async function removeFeedback(item) {
     }
 }
 
-/* ---------------- 外观：头像图片与自定义背景 ---------------- */
+/* ---------------- 外观：头像图片与背景图 ---------------- */
+
+// 上传 / 移除后，把最新的三个图片地址同步到界面（顺带重画头像与背景）
+function applyProfile(profile) {
+    applyUser({
+        ...currentUser,
+        avatar_url: profile.avatar_url || '',
+        background_url: profile.background_url || '',
+        background_mobile_url: profile.background_mobile_url || ''
+    });
+}
 
 // 选文件 → 裁剪 → 上传 → 刷新资料
 function setupImageUpload({ button, input, kind, crop, done }) {
@@ -328,11 +342,7 @@ function setupImageUpload({ button, input, kind, crop, done }) {
         setLoading(button, true);
         try {
             const { profile } = await api.profile.saveImage(kind, blob);
-            applyUser({
-                ...currentUser,
-                avatar_url: profile.avatar_url || '',
-                background_url: profile.background_url || ''
-            });
+            applyProfile(profile);
             toast(done, 'success');
         } catch (err) {
             toast(err.message, 'error');
@@ -346,11 +356,7 @@ async function removeImage(kind, button) {
     setLoading(button, true);
     try {
         const { profile } = await api.profile.clearImage(kind);
-        applyUser({
-            ...currentUser,
-            avatar_url: profile.avatar_url || '',
-            background_url: profile.background_url || ''
-        });
+        applyProfile(profile);
         toast('已移除', 'success');
     } catch (err) {
         toast(err.message, 'error');
@@ -407,12 +413,20 @@ function bindEvents() {
         button: els.bgUploadBtn,
         input: els.bgFile,
         kind: 'background',
-        crop: { aspect: 16 / 9, outputWidth: 1600, quality: 0.75, title: '裁剪背景' },
-        done: '背景已更新'
+        crop: { aspect: 16 / 9, outputWidth: 1600, quality: 0.75, title: '裁剪电脑端背景' },
+        done: '电脑端背景已更新'
+    });
+    setupImageUpload({
+        button: els.bgMobileUploadBtn,
+        input: els.bgMobileFile,
+        kind: 'background-mobile',
+        crop: { aspect: 9 / 16, outputWidth: 900, quality: 0.75, title: '裁剪手机端背景' },
+        done: '手机端背景已更新'
     });
 
     els.avatarRemoveBtn.addEventListener('click', () => removeImage('avatar', els.avatarRemoveBtn));
     els.bgRemoveBtn.addEventListener('click', () => removeImage('background', els.bgRemoveBtn));
+    els.bgMobileRemoveBtn.addEventListener('click', () => removeImage('background-mobile', els.bgMobileRemoveBtn));
 
     // 拖动时先本地预览，松手才写库，避免一路拖一路发请求
     els.bgOpacity.addEventListener('input', () => {

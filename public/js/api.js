@@ -37,7 +37,7 @@ async function requireUser() {
 async function buildUser(user) {
     const { data } = await supabase
         .from('profiles')
-        .select('nickname, avatar_emoji, avatar_url, background_url, background_opacity, bio, created_at')
+        .select('nickname, avatar_emoji, avatar_url, background_url, background_mobile_url, background_opacity, bio, created_at')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -48,11 +48,19 @@ async function buildUser(user) {
         avatar_emoji: (data && data.avatar_emoji) || '',
         avatar_url: (data && data.avatar_url) || '',
         background_url: (data && data.background_url) || '',
+        background_mobile_url: (data && data.background_mobile_url) || '',
         background_opacity: data && data.background_opacity != null ? data.background_opacity : 100,
         bio: (data && data.bio) || '',
         joined_at: (data && data.created_at) || user.created_at || null
     };
 }
+
+// 三种图片对应的资料字段与存储路径（文件名即 kind）
+const IMAGE_FIELDS = {
+    avatar: 'avatar_url',
+    background: 'background_url',
+    'background-mobile': 'background_mobile_url'
+};
 
 // 头像 / 背景图存在 Storage 的公开桶里，路径固定为 <用户id>/<kind>.jpg，
 // 覆盖同名文件后加时间戳，避免浏览器与 CDN 继续用旧图
@@ -344,21 +352,24 @@ export const api = {
                 avatar_emoji: data.avatar_emoji || '',
                 avatar_url: data.avatar_url || '',
                 background_url: data.background_url || '',
+                background_mobile_url: data.background_mobile_url || '',
                 background_opacity: data.background_opacity != null ? data.background_opacity : 100,
                 bio: data.bio || ''
             });
             return { profile: data };
         },
 
-        // 上传裁剪好的头像 / 背景图（kind: 'avatar' | 'background'）
+        // 上传裁剪好的图片（kind: 'avatar' | 'background' | 'background-mobile'）
         async saveImage(kind, blob) {
             const user = await requireUser();
+            const field = IMAGE_FIELDS[kind];
+            if (!field) fail('未知的图片类型', 400);
+
             const url = await uploadImage(kind, blob);
-            const patch = kind === 'avatar' ? { avatar_url: url } : { background_url: url };
 
             const { data, error } = await supabase
                 .from('profiles')
-                .update(patch)
+                .update({ [field]: url })
                 .eq('id', user.id)
                 .select()
                 .single();
@@ -367,18 +378,20 @@ export const api = {
 
             store.patchUser({
                 avatar_url: data.avatar_url || '',
-                background_url: data.background_url || ''
+                background_url: data.background_url || '',
+                background_mobile_url: data.background_mobile_url || ''
             });
             return { profile: data, url };
         },
 
         async clearImage(kind) {
             const user = await requireUser();
-            const patch = kind === 'avatar' ? { avatar_url: '' } : { background_url: '' };
+            const field = IMAGE_FIELDS[kind];
+            if (!field) fail('未知的图片类型', 400);
 
             const { data, error } = await supabase
                 .from('profiles')
-                .update(patch)
+                .update({ [field]: '' })
                 .eq('id', user.id)
                 .select()
                 .single();
@@ -391,7 +404,8 @@ export const api = {
 
             store.patchUser({
                 avatar_url: data.avatar_url || '',
-                background_url: data.background_url || ''
+                background_url: data.background_url || '',
+                background_mobile_url: data.background_mobile_url || ''
             });
             return { profile: data };
         },

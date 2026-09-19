@@ -24,9 +24,11 @@ alter table public.profiles add column if not exists bio text;
 alter table public.profiles add column if not exists updated_at timestamptz not null default now();
 
 -- 自定义头像与背景图：图片本体存在 Storage 的 media 桶里，这里只存 URL；
--- background_opacity 是背景图的透明度（0~100）
+-- background_opacity 是背景图的透明度（0~100）；
+-- background_mobile_url 是手机端单独用的背景（留空就沿用电脑端那张）
 alter table public.profiles add column if not exists avatar_url text;
 alter table public.profiles add column if not exists background_url text;
+alter table public.profiles add column if not exists background_mobile_url text;
 alter table public.profiles add column if not exists background_opacity smallint not null default 100;
 
 -- 打卡记录：每人每天一条

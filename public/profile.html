@@ -82,13 +82,25 @@
 
             <div class="setting-row">
                 <div>
-                    <div class="setting-label">自定义背景</div>
-                    <div class="setting-desc">登录后的所有页面都会用这张图当背景</div>
+                    <div class="setting-label">电脑端背景</div>
+                    <div class="setting-desc">宽屏时用这张，建议传横图（16:9）</div>
                 </div>
                 <div class="media-actions">
                     <button type="button" class="btn-ghost" id="bgUploadBtn">上传图片</button>
                     <button type="button" class="btn-ghost hidden" id="bgRemoveBtn">移除</button>
                     <input type="file" id="bgFile" class="file-input" accept="image/*">
+                </div>
+            </div>
+
+            <div class="setting-row">
+                <div>
+                    <div class="setting-label">手机端背景</div>
+                    <div class="setting-desc">窄屏时单独用这张，建议传竖图；不传就沿用电脑端那张</div>
+                </div>
+                <div class="media-actions">
+                    <button type="button" class="btn-ghost" id="bgMobileUploadBtn">上传图片</button>
+                    <button type="button" class="btn-ghost hidden" id="bgMobileRemoveBtn">移除</button>
+                    <input type="file" id="bgMobileFile" class="file-input" accept="image/*">
                 </div>
             </div>
 

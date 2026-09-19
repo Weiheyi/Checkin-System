@@ -126,9 +126,22 @@ export function setShellUser(user) {
     els.name.textContent = user.nickname || user.email || '用户';
 }
 
-// 自定义背景：全站一张图，铺满视口垫在内容下面，透明度由用户设置
+// 自定义背景：铺满视口垫在内容下面，透明度由用户设置。
+// 电脑与手机可以各传一张，这里按屏幕宽度选用，另一张作兜底
+const MOBILE_MQ = window.matchMedia('(max-width: 720px)');
+let lastUser = null;
+
+function backgroundUrlOf(user) {
+    if (!user) return '';
+    const desktop = user.background_url || '';
+    const mobile = user.background_mobile_url || '';
+    return MOBILE_MQ.matches ? mobile || desktop : desktop || mobile;
+}
+
 function applyBackground(user) {
-    const url = user && user.background_url;
+    lastUser = user;
+
+    const url = backgroundUrlOf(user);
     const existing = document.getElementById('appBg');
 
     if (!url) {
@@ -148,6 +161,11 @@ function applyBackground(user) {
     const opacity = user.background_opacity == null ? 100 : user.background_opacity;
     setBackgroundOpacity(opacity);
 }
+
+// 窗口尺寸跨过断点（或手机横竖屏切换）时换用对应的那张
+MOBILE_MQ.addEventListener('change', () => {
+    if (lastUser) applyBackground(lastUser);
+});
 
 // 调整背景透明度（个人中心的滑块用它做即时预览）
 export function setBackgroundOpacity(value) {
