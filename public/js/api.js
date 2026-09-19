@@ -706,6 +706,19 @@ export const api = {
             return (data || []).map(mapSession);
         },
 
+        // 单条学习记录；详情页直接按 id 取，不依赖列表的条数上限
+        async session(id) {
+            await requireUser();
+            const { data, error } = await supabase
+                .from('study_sessions')
+                .select('id, book_id, book_name, mode, total, known, vague, again, correct, wrong, created_at')
+                .eq('id', id)
+                .maybeSingle();
+
+            if (error) fail(error.message, 500);
+            return data ? mapSession(data) : null;
+        },
+
         // 单次会话的逐词明细，展开记录时才拉取；整本背诵可能上千条，分页取全
         async sessionLogs(sessionId) {
             await requireUser();

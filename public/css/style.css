@@ -2852,6 +2852,27 @@ button {
     overflow-wrap: break-word;
 }
 
+/* 学习记录详情页：单条记录的概览 + 逐词明细 */
+.record-detail-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 12px;
+    background: var(--bg);
+    border-radius: var(--radius-md);
+}
+
+.record-detail-sub {
+    margin: var(--space-3) 0 var(--space-2);
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+/* 列表里的明细要跟着记录头缩进，详情页里是顶层元素，不缩进 */
+.record-detail > .record-words {
+    padding: 0;
+}
+
 /* ========== 个人中心：意见反馈 ========== */
 .feedback-list {
     margin-top: var(--space-3);

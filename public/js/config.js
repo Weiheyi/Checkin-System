@@ -8,6 +8,7 @@ export const PAGES = {
     login: 'index.html',
     dashboard: 'dashboard.html',
     tools: 'tools.html',
+    record: 'record.html',
     friends: 'friends.html',
     profile: 'profile.html',
     guide: 'guide.html'

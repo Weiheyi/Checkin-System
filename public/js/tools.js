@@ -1,3 +1,4 @@
+import { PAGES } from './config.js';
 import { api } from './api.js';
 import { $, $$, toast, confirmDialog, setLoading, skeletonRows } from './ui.js';
 import { initShell } from './shell.js';
@@ -2464,65 +2465,13 @@ function renderRecordItem(session) {
 
     head.append(badge, main, time);
 
-    const words = document.createElement('div');
-    words.className = 'record-words';
-    words.hidden = true;
-
-    head.addEventListener('click', () => toggleRecordWords(session, words));
-
-    wrap.append(head, words);
-    return wrap;
-}
-
-// 明细在展开时才拉，避免一次把上千行日志全取回来
-async function toggleRecordWords(session, host) {
-    const willOpen = host.hidden;
-    host.hidden = !willOpen;
-    if (!willOpen || host.dataset.loaded) return;
-
-    host.dataset.loaded = '1';
-    host.textContent = '加载中…';
-
-    try {
-        renderSessionLogs(host, await api.wordbooks.sessionLogs(session.id), session.mode);
-    } catch (err) {
-        delete host.dataset.loaded;
-        host.textContent = err.message;
-    }
-}
-
-function renderSessionLogs(host, logs, mode) {
-    host.replaceChildren();
-
-    if (!logs.length) {
-        host.textContent = '这次没有留下单词明细';
-        return;
-    }
-
-    const fragment = document.createDocumentFragment();
-    logs.forEach(log => {
-        const row = document.createElement('div');
-        row.className = 'record-word';
-
-        const term = document.createElement('span');
-        term.className = 'record-word-term';
-        term.textContent = log.term;
-
-        const meaning = document.createElement('span');
-        meaning.className = 'record-word-meaning';
-        meaning.textContent = log.meaning || '—';
-
-        const badge = document.createElement('span');
-        badge.className = `status-badge status-${log.result}`;
-        badge.textContent = mode === 'quiz'
-            ? (log.result === 'known' ? '答对' : '答错')
-            : STATUS_LABELS[log.result];
-
-        row.append(term, meaning, badge);
-        fragment.appendChild(row);
+    // 明细在独立的详情页里看，这里只负责跳过去
+    head.addEventListener('click', () => {
+        location.href = `${PAGES.record}?id=${encodeURIComponent(session.id)}`;
     });
 
-    host.appendChild(fragment);
+    wrap.append(head);
+    return wrap;
 }
 
 /* ---------------- 导出学习记录 ---------------- */
