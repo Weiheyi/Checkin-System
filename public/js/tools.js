@@ -732,6 +732,8 @@ async function openBook(id) {
         wordsState.filter = 'all';
         wordsState.page = 1;
         wordsState.selected.clear();
+        // 「考核选中」的词池属于上一本书，换本子就作废
+        quiz.override = null;
         els.detailTitle.textContent = book.name;
         syncSortSwitch(els.wordSortGroup, wordsState.listSort);
         renderDetailStats();
@@ -1212,7 +1214,8 @@ function updateQuizHint() {
     const notes = [];
 
     if (quiz.override) {
-        notes.push(`已选中 ${quiz.override.length} 个单词，随机抽 ${picked} 题。`);
+        notes.push(`已从「单词」页选中 ${quiz.override.length} 个单词，随机抽 ${picked} 题。`);
+        notes.push('选好题型与题量后点「开始考核」；改动上面的「范围」会取消这次选中。');
     } else {
         notes.push(`本子共 ${wordsState.words.length} 个单词，「${FILTER_LABELS[quiz.scope]}」范围内 ${pool.length} 个可考核，随机抽 ${picked} 题。`);
     }
@@ -1281,7 +1284,7 @@ function startQuiz() {
     renderQuizQuestion();
 }
 
-// 从「单词」列表勾选后直接开考，词池由 override 指定
+// 从「单词」列表勾选后，跳到考核设置页；由用户选好题型 / 题量再手动点「开始考核」
 function quizSelected() {
     const usable = wordsState.words
         .filter(word => wordsState.selected.has(word.id))
@@ -1290,8 +1293,8 @@ function quizSelected() {
     if (!usable.length) return toast('选中的单词都没有释义，无法考核', 'error');
 
     quiz.override = usable;
+    // openDetailTab('quiz') 会回到设置页并刷新提示（这里刻意不直接开考）
     openDetailTab('quiz');
-    startQuiz();
 }
 
 function renderQuizProgress() {
@@ -2663,10 +2666,7 @@ function bindEvents() {
         });
         updateQuizHint();
     });
-    els.quizStart.addEventListener('click', () => {
-        quiz.override = null;
-        startQuiz();
-    });
+    els.quizStart.addEventListener('click', startQuiz);
     els.quizSubmit.addEventListener('click', submitTyped);
     els.quizInput.addEventListener('keydown', e => {
         if (e.key === 'Enter') submitTyped();
