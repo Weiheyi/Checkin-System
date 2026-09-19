@@ -486,6 +486,7 @@ const wordsState = {
     listSort: loadListSort(),
     pageSize: loadPageSize(),
     page: 1,
+    pages: 1,
     filter: 'all',
     selected: new Set()
 };
@@ -856,6 +857,7 @@ function pageRange(total) {
 }
 
 function renderWordPager(total, pages) {
+    wordsState.pages = pages;
     els.wordPager.hidden = total === 0;
     els.pageInfo.textContent = `第 ${wordsState.page} / ${pages} 页 · 共 ${total} 个`;
     els.pagePrev.disabled = wordsState.page <= 1;
@@ -864,6 +866,20 @@ function renderWordPager(total, pages) {
     [...els.pageSizeGroup.querySelectorAll('button')].forEach(btn => {
         btn.classList.toggle('active', Number(btn.dataset.size) === wordsState.pageSize);
     });
+
+    // 跳页输入框跟着当前页走；正在里面打字时不要覆盖用户输入
+    els.pageJump.max = String(pages);
+    if (document.activeElement !== els.pageJump) els.pageJump.value = String(wordsState.page);
+}
+
+// 输入页码后自动跳转：超出范围就夹到合法页码，非法输入忽略
+function jumpToTypedPage() {
+    const typed = Math.floor(Number(els.pageJump.value));
+    if (!Number.isFinite(typed) || typed < 1) return;
+
+    const target = Math.min(typed, Math.max(1, wordsState.pages));
+    if (String(target) !== els.pageJump.value) els.pageJump.value = String(target);
+    if (target !== wordsState.page) goToPage(target);
 }
 
 function goToPage(page) {
@@ -2149,6 +2165,58 @@ function renderSessionLogs(host, logs, mode) {
     host.appendChild(fragment);
 }
 
+/* ---------------- 离线字典 ---------------- */
+
+// 查的是本地内置的美音音标词典（vendor/ipa/en_US.txt，第一次打开字典页时加载，之后完全离线）
+function renderDictResult() {
+    const raw = els.dictInput.value.trim();
+
+    els.dictResult.replaceChildren();
+    els.dictResult.className = 'dict-result';
+
+    if (!raw) {
+        els.dictResult.textContent = '输入一个英文单词，这里会显示它的美音音标。';
+        return;
+    }
+
+    if (!phoneticsReady()) {
+        els.dictResult.textContent = '正在加载词典（约 2.9MB，只需一次）…';
+        loadPhonetics()
+            .then(renderDictResult)
+            .catch(() => {
+                els.dictResult.className = 'dict-result';
+                els.dictResult.textContent = '词典加载失败，请检查网络后重试。';
+            });
+        return;
+    }
+
+    const ipa = phoneticOf(raw);
+    if (!ipa) {
+        els.dictResult.textContent = `词典里没有收录「${raw}」。`;
+        return;
+    }
+
+    const word = document.createElement('div');
+    word.className = 'dict-word';
+    word.textContent = raw;
+
+    const row = document.createElement('div');
+    row.className = 'dict-phonetic-row';
+
+    const phonetic = document.createElement('span');
+    phonetic.className = 'dict-phonetic';
+    phonetic.textContent = ipa;
+
+    row.append(phonetic, makeSpeakButton(raw));
+    els.dictResult.append(word, row);
+}
+
+function speakDictWord() {
+    const word = els.dictInput.value.trim();
+    if (!word) return;
+    if (!speak(word)) toast('当前浏览器不支持语音朗读', 'error');
+}
+
 /* ---------------- 工具切换 ---------------- */
 
 function switchTool(name) {
@@ -2156,6 +2224,14 @@ function switchTool(name) {
     els.panelTimer.classList.toggle('hidden', name !== 'timer');
     els.panelCountdown.classList.toggle('hidden', name !== 'countdown');
     els.panelWords.classList.toggle('hidden', name !== 'words');
+    els.panelDict.classList.toggle('hidden', name !== 'dict');
+
+    if (name === 'dict') {
+        // 切进来就先加载，第一次查词就不用等
+        if (!phoneticsReady()) loadPhonetics().catch(() => {});
+        renderDictResult();
+        els.dictInput.focus();
+    }
 }
 
 /* ---------------- 上传文件 ---------------- */
@@ -2252,6 +2328,10 @@ function cacheElements() {
     els.panelTimer = $('#panel-timer');
     els.panelCountdown = $('#panel-countdown');
     els.panelWords = $('#panel-words');
+    els.panelDict = $('#panel-dict');
+
+    els.dictInput = $('#dictInput');
+    els.dictResult = $('#dictResult');
 
     els.timerDisplay = $('#timerDisplay');
     els.timerHint = $('#timerHint');
@@ -2377,6 +2457,7 @@ function cacheElements() {
     els.pagePrev = $('#pagePrev');
     els.pageNext = $('#pageNext');
     els.pageInfo = $('#pageInfo');
+    els.pageJump = $('#pageJump');
 
     els.addWordsView = $('#addWordsView');
     els.addText = $('#addText');
@@ -2395,6 +2476,12 @@ function bindEvents() {
     els.toolTabs.addEventListener('click', e => {
         const btn = e.target.closest('button[data-tool]');
         if (btn) switchTool(btn.dataset.tool);
+    });
+
+    // 离线字典
+    els.dictInput.addEventListener('input', renderDictResult);
+    els.dictInput.addEventListener('keydown', e => {
+        if (e.key === 'Enter') speakDictWord();
     });
 
     // 计时器
@@ -2598,6 +2685,24 @@ function bindEvents() {
     });
     els.pagePrev.addEventListener('click', () => goToPage(wordsState.page - 1));
     els.pageNext.addEventListener('click', () => goToPage(wordsState.page + 1));
+
+    // 页码输入框：停顿一下或回车就自动跳，避免边打字边跳
+    let pageJumpTimer = null;
+    els.pageJump.addEventListener('input', () => {
+        clearTimeout(pageJumpTimer);
+        pageJumpTimer = setTimeout(jumpToTypedPage, 400);
+    });
+    els.pageJump.addEventListener('keydown', e => {
+        if (e.key !== 'Enter') return;
+        clearTimeout(pageJumpTimer);
+        jumpToTypedPage();
+    });
+    els.pageJump.addEventListener('blur', () => {
+        clearTimeout(pageJumpTimer);
+        const typed = Math.floor(Number(els.pageJump.value));
+        if (Number.isFinite(typed) && typed >= 1 && typed !== wordsState.page) jumpToTypedPage();
+        else els.pageJump.value = String(wordsState.page);
+    });
     els.selectAllBtn.addEventListener('click', selectAllVisible);
     els.selectClearBtn.addEventListener('click', clearSelection);
     els.quizSelectedBtn.addEventListener('click', quizSelected);

@@ -2173,6 +2173,69 @@ button {
     cursor: not-allowed;
 }
 
+.pager-jump {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.pager-jump input {
+    width: 64px;
+    padding: 7px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 13px;
+    font-family: inherit;
+    text-align: center;
+    outline: none;
+    transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.pager-jump input:focus {
+    border-color: var(--color-primary);
+    box-shadow: var(--ring);
+}
+
+/* ---- 离线字典 ---- */
+.dict-result {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-1);
+    min-height: 64px;
+    margin-top: var(--space-2);
+    text-align: center;
+    font-size: 14px;
+    color: var(--text-muted);
+    word-break: break-word;
+}
+
+.dict-word {
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--text-strong);
+    word-break: break-word;
+}
+
+.dict-phonetic-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+}
+
+.dict-phonetic {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 17px;
+    color: var(--color-primary);
+}
+
 .filter-row {
     display: flex;
     flex-wrap: wrap;

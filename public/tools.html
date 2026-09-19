@@ -32,6 +32,7 @@
             <button type="button" data-tool="timer" class="active">⏱ 计时器</button>
             <button type="button" data-tool="countdown">⏳ 倒计时</button>
             <button type="button" data-tool="words">📖 背单词</button>
+            <button type="button" data-tool="dict">🔤 字典</button>
         </div>
 
         <!-- ========== 计时器 ========== -->
@@ -292,6 +293,11 @@
                             <button class="pager-btn" id="pagePrev" type="button">上一页</button>
                             <span class="pager-info" id="pageInfo"></span>
                             <button class="pager-btn" id="pageNext" type="button">下一页</button>
+                            <label class="pager-jump">
+                                跳至
+                                <input type="number" id="pageJump" min="1" inputmode="numeric" aria-label="跳转到页码">
+                                页
+                            </label>
                         </div>
                     </div>
                 </div>
@@ -369,6 +375,21 @@
                     <button class="btn-primary block-btn" id="addSave" type="button" disabled>追加到单词本</button>
                 </div>
             </div>
+        </section>
+
+        <!-- ========== 离线字典 ========== -->
+        <section class="card tool-panel hidden" id="panel-dict">
+            <h3 class="card-title">🔤 离线字典</h3>
+            <div class="task-input-wrapper">
+                <input type="text" class="task-input" id="dictInput" autocomplete="off"
+                       autocapitalize="off" autocorrect="off" spellcheck="false"
+                       placeholder="输入英文单词，自动查美音音标">
+            </div>
+            <div class="dict-result" id="dictResult"></div>
+            <p class="setting-desc">
+                音标来自本地内置的 12.5 万词美音词典，完全离线、不联网。
+                查不到的多是生僻词或专有名词，不影响查别的词。
+            </p>
         </section>
     </div>
 
