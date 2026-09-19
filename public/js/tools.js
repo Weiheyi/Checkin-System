@@ -506,6 +506,8 @@ const quiz = {
     correct: 0,
     wrong: [],
     answered: false,
+    // 填义题自动判错时暂存本次作答，等用户确认「我答对了」或点下一题才落账
+    pending: null,
     sessionPromise: null
 };
 
@@ -1103,6 +1105,62 @@ function finishStudy() {
     renderDetailStats();
 }
 
+/* ---------------- 填义自动判分 ---------------- */
+
+// 释义里的词性标记、括号注解、标点先清掉，只留下可比较的汉字 / 字母
+const BRACKET_RE = /\[[^\]]*\]|\([^)]*\)|（[^）]*）|【[^】]*】/g;
+const POS_HEAD_RE = /^(?:n|v|vt|vi|adj|adv|prep|pron|conj|num|art|int|interj|aux|abbr|pl|det)\.?\s+/i;
+const SENSE_SEP_RE = /[；;，,、|｜/]+/;
+
+function normalizeSense(text) {
+    return String(text)
+        .replace(BRACKET_RE, ' ')
+        .replace(POS_HEAD_RE, '')
+        .replace(/[\s\u3000]+/g, '')
+        .replace(/[.。·:：;；,，、!！?？"'“”‘’`~()（）\[\]【】{}<>《》/\\|｜\-–—_+@#$%^&*=]/g, '')
+        .toLowerCase();
+}
+
+// 一个释义常有好几个义项（「放弃；抛弃」），拆开逐个比对
+function meaningSenses(meaning) {
+    return String(meaning || '')
+        .split(SENSE_SEP_RE)
+        .map(normalizeSense)
+        .filter(Boolean);
+}
+
+// 最长公共子序列长度，用来容忍个别字的出入
+function commonLength(a, b) {
+    const n = b.length;
+    let prev = new Array(n + 1).fill(0);
+    let cur = new Array(n + 1).fill(0);
+
+    for (let i = 1; i <= a.length; i++) {
+        for (let j = 1; j <= n; j++) {
+            cur[j] = a[i - 1] === b[j - 1] ? prev[j - 1] + 1 : Math.max(prev[j], cur[j - 1]);
+        }
+        [prev, cur] = [cur, prev];
+        cur.fill(0);
+    }
+    return prev[n];
+}
+
+// 填义判分：与任一义项完全一致、互相包含，或高度相似即算对。
+// 中文答案写法多样，只做「是否答对」的近似判断，判错时另有手动纠正入口。
+function judgeMeaning(input, meaning) {
+    const user = normalizeSense(input);
+    if (!user) return false;
+
+    return meaningSenses(meaning).some(sense => {
+        if (sense === user) return true;
+        // 单字太容易误判（「是」「的」），只认完全一致
+        const shorter = Math.min(user.length, sense.length);
+        if (shorter < 2) return false;
+        if (sense.includes(user) || user.includes(sense)) return true;
+        return commonLength(user, sense) / shorter >= 0.8;
+    });
+}
+
 /* ---------------- 考核 ---------------- */
 
 function resetQuizSetup() {
@@ -1138,6 +1196,8 @@ function updateQuizHint() {
         notes.push('该范围内没有可考核的单词，请先补释义或换个范围。');
     } else if (quiz.type === 'choice' && pool.length < 4) {
         notes.push('选择题至少需要 4 个带释义的单词才能凑齐选项，建议改用拼写。');
+    } else if (quiz.type === 'meaning') {
+        notes.push('填义题按中文意思自动判分，判错时可点「我答对了，算对」纠正。');
     }
 
     els.quizSetupHint.textContent = notes.join(' ');
@@ -1154,6 +1214,9 @@ function buildQuizQuestions() {
     return picked.map(word => {
         if (quiz.type === 'spell') {
             return { word, kind: 'spell', prompt: word.meaning, sub: '根据释义拼写单词', answer: word.term };
+        }
+        if (quiz.type === 'meaning') {
+            return { word, kind: 'meaning', prompt: word.term, sub: '写出这个单词的中文意思', answer: word.meaning };
         }
 
         const byTerm = quiz.dir === 'term';
@@ -1183,6 +1246,7 @@ function startQuiz() {
     quiz.correct = 0;
     quiz.wrong = [];
     quiz.answered = false;
+    quiz.pending = null;
     quiz.sessionPromise = null;
     quiz.warned = false;
 
@@ -1214,10 +1278,12 @@ function renderQuizQuestion() {
     if (!question) return finishQuiz();
 
     quiz.answered = false;
+    quiz.pending = null;
     renderQuizProgress();
     els.quizPrompt.textContent = question.prompt;
     els.quizSub.textContent = question.sub;
     els.quizFeedback.hidden = true;
+    els.quizOverride.hidden = true;
     els.quizNext.hidden = true;
     els.quizOptions.replaceChildren();
 
@@ -1238,6 +1304,7 @@ function renderQuizQuestion() {
         els.quizInput.value = '';
         els.quizInput.disabled = false;
         els.quizSubmit.disabled = false;
+        els.quizInput.placeholder = question.kind === 'meaning' ? '输入中文意思后回车' : '输入对应的单词后回车';
         els.quizInput.focus();
     }
 }
@@ -1255,22 +1322,39 @@ function answerChoice(question, btn, value) {
     resolveQuizAnswer(question, value === question.answer, value);
 }
 
-function submitSpell() {
+function submitTyped() {
     const question = quiz.questions[quiz.index];
-    if (!question || question.kind !== 'spell' || quiz.answered) return;
+    if (!question || question.kind === 'choice' || quiz.answered) return;
 
     const value = els.quizInput.value.trim();
     if (!value) return toast('请输入答案', 'error');
 
-    quiz.answered = true;
     els.quizInput.disabled = true;
     els.quizSubmit.disabled = true;
 
-    const ok = value.toLowerCase() === question.answer.trim().toLowerCase();
-    resolveQuizAnswer(question, ok, value);
+    // 填义题：自动判对就直接计入；判错先不落账，留一次手动纠正的机会
+    if (question.kind === 'meaning') {
+        quiz.answered = true;
+        if (judgeMeaning(value, question.answer)) {
+            resolveQuizAnswer(question, true, value);
+        } else {
+            quiz.pending = { question, given: value };
+            renderAnswerFeedback(question, false);
+            els.quizOverride.hidden = false;
+        }
+        return;
+    }
+
+    quiz.answered = true;
+    resolveQuizAnswer(question, value.toLowerCase() === question.answer.trim().toLowerCase(), value);
 }
 
 function resolveQuizAnswer(question, correct, given) {
+    commitQuizAnswer(question, correct, given);
+    renderAnswerFeedback(question, correct);
+}
+
+function commitQuizAnswer(question, correct, given) {
     applyQuizResult(question.word, correct);
 
     if (correct) {
@@ -1278,7 +1362,9 @@ function resolveQuizAnswer(question, correct, given) {
     } else {
         quiz.wrong.push({ prompt: question.prompt, answer: question.answer, given });
     }
+}
 
+function renderAnswerFeedback(question, correct) {
     els.quizFeedback.hidden = false;
     els.quizFeedback.className = `quiz-feedback ${correct ? 'ok' : 'no'}`;
     els.quizFeedback.replaceChildren();
@@ -1304,8 +1390,27 @@ function resolveQuizAnswer(question, correct, given) {
     els.quizNext.focus();
 }
 
+// 填义被自动判错后点「我答对了」：按答对重新计分（此时还没落账，改判不会重复记录）
+function acceptQuizMeaning() {
+    const pending = quiz.pending;
+    if (!pending) return;
+
+    quiz.pending = null;
+    els.quizOverride.hidden = true;
+    commitQuizAnswer(pending.question, true, pending.given);
+    renderAnswerFeedback(pending.question, true);
+}
+
 function nextQuestion() {
     if (!quiz.answered) return;
+
+    // 自动判错又没点「我答对了」，就按答错落账
+    if (quiz.pending) {
+        const pending = quiz.pending;
+        quiz.pending = null;
+        commitQuizAnswer(pending.question, false, pending.given);
+    }
+
     quiz.index += 1;
     if (quiz.index >= quiz.questions.length) finishQuiz();
     else renderQuizQuestion();
@@ -1377,6 +1482,8 @@ const elim = {
     total: 0,
     current: null,
     answered: false,
+    // 填义题自动判错时暂存本次作答，等用户确认「我答对了」或点下一题才落账
+    pending: null,
     sessionPromise: null,
     warned: false
 };
@@ -1451,6 +1558,9 @@ function refreshWrongStats() {
         if (elim.type === 'choice' && usableWords().length < 4) {
             notes.push('带释义的单词不足 4 个，请改用「拼写」。');
         }
+        if (elim.type === 'meaning') {
+            notes.push('填义题按中文意思自动判分，判错时可点「我答对了，算对」纠正。');
+        }
         els.wrongHint.textContent = notes.join(' ');
         els.wrongStart.disabled = false;
     }
@@ -1467,6 +1577,7 @@ function startElim() {
     elim.total = elim.queue.length;
     elim.current = null;
     elim.answered = false;
+    elim.pending = null;
     elim.sessionPromise = null;
     elim.warned = false;
 
@@ -1479,6 +1590,9 @@ function startElim() {
 function buildElimQuestion(word) {
     if (elim.type === 'spell') {
         return { word, kind: 'spell', prompt: word.meaning, sub: '根据释义拼写单词', answer: word.term };
+    }
+    if (elim.type === 'meaning') {
+        return { word, kind: 'meaning', prompt: word.term, sub: '写出这个单词的中文意思', answer: word.meaning };
     }
 
     const answer = word.meaning;
@@ -1508,9 +1622,11 @@ function renderElimQuestion() {
     const question = buildElimQuestion(word);
     elim.current = question;
     elim.answered = false;
+    elim.pending = null;
 
     renderElimProgress();
     els.wrongFeedback.hidden = true;
+    els.wrongOverride.hidden = true;
     els.wrongNext.hidden = true;
     els.wrongOptions.replaceChildren();
     els.wrongPrompt.textContent = question.prompt;
@@ -1533,6 +1649,7 @@ function renderElimQuestion() {
         els.wrongInput.value = '';
         els.wrongInput.disabled = false;
         els.wrongSubmit.disabled = false;
+        els.wrongInput.placeholder = question.kind === 'meaning' ? '输入中文意思后回车' : '输入对应的单词后回车';
         els.wrongInput.focus();
     }
 }
@@ -1550,21 +1667,40 @@ function answerElimChoice(question, btn, value) {
     resolveElimAnswer(question, value === question.answer);
 }
 
-function submitElimSpell() {
+function submitElimTyped() {
     const question = elim.current;
-    if (!question || question.kind !== 'spell' || elim.answered) return;
+    if (!question || question.kind === 'choice' || elim.answered) return;
 
     const value = els.wrongInput.value.trim();
     if (!value) return toast('请输入答案', 'error');
 
-    elim.answered = true;
     els.wrongInput.disabled = true;
     els.wrongSubmit.disabled = true;
 
+    // 填义题：自动判对就直接计入；判错先不落账，留一次手动纠正的机会
+    if (question.kind === 'meaning') {
+        elim.answered = true;
+        if (judgeMeaning(value, question.answer)) {
+            resolveElimAnswer(question, true);
+        } else {
+            elim.pending = { question, given: value };
+            renderElimFeedback(question, false, false);
+            els.wrongOverride.hidden = false;
+        }
+        return;
+    }
+
+    elim.answered = true;
     resolveElimAnswer(question, value.toLowerCase() === question.answer.trim().toLowerCase());
 }
 
 function resolveElimAnswer(question, correct) {
+    const eliminated = commitElimAnswer(question, correct);
+    renderElimFeedback(question, correct, eliminated);
+}
+
+// 记一次作答并移动队列；返回这个词本轮是否已被消灭
+function commitElimAnswer(question, correct) {
     const word = question.word;
     applyElimResult(word, correct);
 
@@ -1572,6 +1708,14 @@ function resolveElimAnswer(question, correct) {
     const eliminated = correct && word.mastery >= MASTERY_TARGET;
     elim.queue.shift();
     if (!eliminated) elim.queue.push(word);
+
+    renderElimProgress();
+    refreshWrongStats();
+    return eliminated;
+}
+
+function renderElimFeedback(question, correct, eliminated) {
+    const word = question.word;
 
     els.wrongFeedback.hidden = false;
     els.wrongFeedback.className = `quiz-feedback ${correct ? 'ok' : 'no'}`;
@@ -1592,16 +1736,32 @@ function resolveElimAnswer(question, correct) {
     }
     els.wrongFeedback.appendChild(makeSpeakButton(word.term));
 
-    renderElimProgress();
-    refreshWrongStats();
-
     els.wrongNext.hidden = false;
     els.wrongNext.textContent = elim.queue.length ? '下一题' : '查看结果';
     els.wrongNext.focus();
 }
 
+// 填义被自动判错后点「我答对了」：按答对重新计分（此时还没落账，改判不会重复记录）
+function acceptElimOverride() {
+    const pending = elim.pending;
+    if (!pending) return;
+
+    elim.pending = null;
+    els.wrongOverride.hidden = true;
+    const eliminated = commitElimAnswer(pending.question, true);
+    renderElimFeedback(pending.question, true, eliminated);
+}
+
 function nextElim() {
     if (!elim.answered) return;
+
+    // 自动判错又没点「我答对了」，就按答错落账
+    if (elim.pending) {
+        const pending = elim.pending;
+        elim.pending = null;
+        commitElimAnswer(pending.question, false);
+    }
+
     if (!elim.queue.length) finishElim();
     else renderElimQuestion();
 }
@@ -2174,6 +2334,7 @@ function cacheElements() {
     els.quizInput = $('#quizInput');
     els.quizSubmit = $('#quizSubmit');
     els.quizFeedback = $('#quizFeedback');
+    els.quizOverride = $('#quizOverride');
     els.quizNext = $('#quizNext');
     els.quizResult = $('#quizResult');
 
@@ -2193,6 +2354,7 @@ function cacheElements() {
     els.wrongInput = $('#wrongInput');
     els.wrongSubmit = $('#wrongSubmit');
     els.wrongFeedback = $('#wrongFeedback');
+    els.wrongOverride = $('#wrongOverride');
     els.wrongNext = $('#wrongNext');
     els.wrongQuit = $('#wrongQuit');
     els.wrongDone = $('#wrongDone');
@@ -2342,7 +2504,8 @@ function bindEvents() {
         if (!btn) return;
         quiz.type = btn.dataset.type;
         $$('#quizTypeGroup button').forEach(item => item.classList.toggle('active', item === btn));
-        els.quizDirGroup.closest('.setting-row').hidden = quiz.type === 'spell';
+        // 只有选择题有「方向」（看词选义 / 看义选词）
+        els.quizDirGroup.closest('.setting-row').hidden = quiz.type !== 'choice';
         updateQuizHint();
     });
     els.quizDirGroup.addEventListener('click', e => {
@@ -2382,10 +2545,11 @@ function bindEvents() {
         quiz.override = null;
         startQuiz();
     });
-    els.quizSubmit.addEventListener('click', submitSpell);
+    els.quizSubmit.addEventListener('click', submitTyped);
     els.quizInput.addEventListener('keydown', e => {
-        if (e.key === 'Enter') submitSpell();
+        if (e.key === 'Enter') submitTyped();
     });
+    els.quizOverride.addEventListener('click', acceptQuizMeaning);
     els.quizNext.addEventListener('click', nextQuestion);
 
     // 消灭错词
@@ -2397,10 +2561,11 @@ function bindEvents() {
         refreshWrongStats();
     });
     els.wrongStart.addEventListener('click', startElim);
-    els.wrongSubmit.addEventListener('click', submitElimSpell);
+    els.wrongSubmit.addEventListener('click', submitElimTyped);
     els.wrongInput.addEventListener('keydown', e => {
-        if (e.key === 'Enter') submitElimSpell();
+        if (e.key === 'Enter') submitElimTyped();
     });
+    els.wrongOverride.addEventListener('click', acceptElimOverride);
     els.wrongNext.addEventListener('click', nextElim);
     els.wrongQuit.addEventListener('click', finishElim);
 

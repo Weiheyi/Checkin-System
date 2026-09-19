@@ -192,6 +192,7 @@
                             <div class="switch-group" id="quizTypeGroup">
                                 <button type="button" data-type="choice" class="active">选择</button>
                                 <button type="button" data-type="spell">拼写</button>
+                                <button type="button" data-type="meaning">填义</button>
                             </div>
                         </div>
                         <div class="setting-row">
@@ -243,6 +244,7 @@
                             <button class="add-task-btn" id="quizSubmit" type="button">提交</button>
                         </div>
                         <div class="quiz-feedback" id="quizFeedback" hidden></div>
+                        <button class="btn-ghost block-btn" id="quizOverride" type="button" hidden>我答对了，算对</button>
                         <button class="btn-primary block-btn" id="quizNext" type="button" hidden>下一题</button>
                     </div>
 
@@ -304,6 +306,7 @@
                             <div class="switch-group" id="elimTypeGroup">
                                 <button type="button" data-type="choice" class="active">选择</button>
                                 <button type="button" data-type="spell">拼写</button>
+                                <button type="button" data-type="meaning">填义</button>
                             </div>
                         </div>
                         <button class="btn-primary block-btn" id="wrongStart" type="button">开始消灭错词</button>
@@ -324,6 +327,7 @@
                             <button class="add-task-btn" id="wrongSubmit" type="button">提交</button>
                         </div>
                         <div class="quiz-feedback" id="wrongFeedback" hidden></div>
+                        <button class="btn-ghost block-btn" id="wrongOverride" type="button" hidden>我答对了，算对</button>
                         <button class="btn-primary block-btn" id="wrongNext" type="button" hidden>下一题</button>
                         <div class="timer-actions">
                             <button class="btn-ghost" id="wrongQuit" type="button">结束本轮</button>
