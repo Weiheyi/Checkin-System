@@ -2236,6 +2236,31 @@ button {
     color: var(--color-primary);
 }
 
+.dict-note {
+    margin-top: var(--space-2);
+    font-size: 13px;
+    color: var(--text-faint);
+}
+
+.dict-meaning {
+    width: 100%;
+    margin-top: var(--space-2);
+    text-align: left;
+}
+
+.dict-sense {
+    padding: 6px 0;
+    border-top: 1px solid var(--border);
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--text);
+    word-break: break-word;
+}
+
+.dict-sense:first-child {
+    border-top: none;
+}
+
 .filter-row {
     display: flex;
     flex-wrap: wrap;

@@ -3,6 +3,7 @@ import { $, $$, toast, confirmDialog, setLoading, skeletonRows } from './ui.js';
 import { initShell } from './shell.js';
 import { extractFile, ACCEPT } from './file-extract.js';
 import { phoneticOf, loadPhonetics, phoneticsReady, speak, warmUpVoices } from './phonetic.js';
+import { dictReady, loadDictionary, meaningOf, meaningLines } from './dictionary.js';
 
 const els = {};
 const BASE_TITLE = document.title;
@@ -2167,7 +2168,7 @@ function renderSessionLogs(host, logs, mode) {
 
 /* ---------------- 离线字典 ---------------- */
 
-// 查的是本地内置的美音音标词典（vendor/ipa/en_US.txt，第一次打开字典页时加载，之后完全离线）
+// 音标来自内置的美音音标词典，中文释义来自内置的 ECDICT 裁剪词库，都完全离线
 function renderDictResult() {
     const raw = els.dictInput.value.trim();
 
@@ -2175,13 +2176,16 @@ function renderDictResult() {
     els.dictResult.className = 'dict-result';
 
     if (!raw) {
-        els.dictResult.textContent = '输入一个英文单词，这里会显示它的美音音标。';
+        els.dictResult.textContent = '输入一个英文单词，这里会显示它的美音音标和中文释义。';
         return;
     }
 
-    if (!phoneticsReady()) {
-        els.dictResult.textContent = '正在加载词典（约 2.9MB，只需一次）…';
-        loadPhonetics()
+    if (!phoneticsReady() || !dictReady()) {
+        els.dictResult.textContent = '正在加载词典（约 6MB，只加载一次）…';
+        Promise.all([
+            phoneticsReady() ? null : loadPhonetics(),
+            dictReady() ? null : loadDictionary()
+        ])
             .then(renderDictResult)
             .catch(() => {
                 els.dictResult.className = 'dict-result';
@@ -2191,7 +2195,9 @@ function renderDictResult() {
     }
 
     const ipa = phoneticOf(raw);
-    if (!ipa) {
+    const meaning = meaningOf(raw);
+
+    if (!ipa && !meaning) {
         els.dictResult.textContent = `词典里没有收录「${raw}」。`;
         return;
     }
@@ -2203,12 +2209,32 @@ function renderDictResult() {
     const row = document.createElement('div');
     row.className = 'dict-phonetic-row';
 
-    const phonetic = document.createElement('span');
-    phonetic.className = 'dict-phonetic';
-    phonetic.textContent = ipa;
-
-    row.append(phonetic, makeSpeakButton(raw));
+    if (ipa) {
+        const phonetic = document.createElement('span');
+        phonetic.className = 'dict-phonetic';
+        phonetic.textContent = ipa;
+        row.appendChild(phonetic);
+    }
+    row.appendChild(makeSpeakButton(raw));
     els.dictResult.append(word, row);
+
+    if (!meaning) {
+        const hint = document.createElement('div');
+        hint.className = 'dict-note';
+        hint.textContent = '这个词收在音标词典里，但不在中文词库范围内。';
+        els.dictResult.appendChild(hint);
+        return;
+    }
+
+    const box = document.createElement('div');
+    box.className = 'dict-meaning';
+    meaningLines(meaning).forEach(line => {
+        const sense = document.createElement('div');
+        sense.className = 'dict-sense';
+        sense.textContent = line;
+        box.appendChild(sense);
+    });
+    els.dictResult.appendChild(box);
 }
 
 function speakDictWord() {
@@ -2229,6 +2255,7 @@ function switchTool(name) {
     if (name === 'dict') {
         // 切进来就先加载，第一次查词就不用等
         if (!phoneticsReady()) loadPhonetics().catch(() => {});
+        if (!dictReady()) loadDictionary().catch(() => {});
         renderDictResult();
         els.dictInput.focus();
     }
