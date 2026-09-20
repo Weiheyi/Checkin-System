@@ -3,7 +3,11 @@ import { store } from './store.js';
 import { PAGES } from './config.js';
 import { $, $$, showFormMessage, setLoading } from './ui.js';
 import { createMathCaptcha } from './math-captcha.js';
+import { registerOffline } from './offline.js';
 import './theme.js';
+
+// 登录页也注册 Service Worker：这样哪怕只是打开登录页，离线缓存也能装上
+registerOffline();
 
 const loginForm = $('#loginForm');
 const registerForm = $('#registerForm');

@@ -14,6 +14,7 @@
 import { api } from './api.js';
 import { toast, confirmDialog } from './ui.js';
 import { loadDictionary, meaningOf, meaningLines } from './dictionary.js';
+import * as net from './net.js';
 
 const FREQ_URL = new URL('../vendor/dict/freq.txt', import.meta.url).href;
 
@@ -413,6 +414,12 @@ export function createVocabTool(panel) {
         els.result.replaceChildren(head, summary, chart, actions);
         showView('result');
 
+        // 一题都没答（比如词库没加载出来）就别往队列里塞一条没意义的结果
+        if (!state.queue.length) {
+            status.textContent = '';
+            return;
+        }
+
         saveResult({ ...size, total: state.queue.length, known: knownTotal, durationMs: elapsed, bands, status });
     }
 
@@ -428,7 +435,9 @@ export function createVocabTool(panel) {
         try {
             await api.vocab.save({ estimate, low, high, total, known, durationMs, bands: payload });
             state.historyLoaded = false;
-            status.textContent = '已保存到云端';
+            status.textContent = net.isOffline()
+                ? '已存在本机，联网后自动补传'
+                : '已保存到云端';
         } catch (error) {
             status.textContent = `保存失败：${schemaHint(error.message)}`;
         }

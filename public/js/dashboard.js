@@ -134,12 +134,21 @@ async function loadToday() {
 }
 
 async function loadStats() {
-    state.stats = await api.stats();
+    try {
+        state.stats = await api.stats();
+    } catch {
+        // 离线且本地还没缓存过统计：先不显示，不影响打卡与任务
+        state.stats = null;
+    }
     renderStats();
 }
 
 async function loadHistory() {
-    state.history = await api.history(10);
+    try {
+        state.history = await api.history(10);
+    } catch {
+        state.history = [];
+    }
     renderHistory();
 }
 

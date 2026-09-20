@@ -3306,6 +3306,45 @@ button {
     font-size: 12px;
 }
 
+/* ========== 离线状态横幅 ========== */
+
+.net-banner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: 10px 14px;
+    margin-bottom: var(--space-3);
+    background: var(--color-warning-soft, #fffaf0);
+    border: 1px solid var(--color-warning);
+    border-radius: var(--radius-md);
+    font-size: 13px;
+    color: var(--text);
+}
+
+.net-banner-text {
+    min-width: 0;
+    overflow-wrap: break-word;
+}
+
+.net-banner-action {
+    flex-shrink: 0;
+    padding: 5px 12px;
+    border: 1px solid var(--color-warning);
+    border-radius: var(--radius-pill);
+    background: transparent;
+    font: inherit;
+    font-size: 13px;
+    color: var(--color-warning);
+    cursor: pointer;
+    transition: background var(--transition);
+}
+
+.net-banner-action:hover {
+    background: rgba(183, 121, 31, 0.1);
+}
+
 /* ========== 导出 PDF ========== */
 
 /* 报告平时是隐藏的：点「导出 PDF」时生成一份挂在 body 下，再调浏览器打印

@@ -1,6 +1,7 @@
 import { supabase } from './supabase.js';
 import { PAGES } from './config.js';
 import { store } from './store.js';
+import * as net from './net.js';
 
 function goToLogin() {
     if (!location.pathname.endsWith(PAGES.login)) {
@@ -195,6 +196,271 @@ function orderedPair(idA, idB) {
     return idA < idB ? [idA, idB] : [idB, idA];
 }
 
+/* ---------------- 离线：本地缓存与待同步队列 ---------------- */
+
+function emptyToday() {
+    return { checked: false, checkin: null, tasks: [] };
+}
+
+function readToday() {
+    return net.cacheValue('today') || emptyToday();
+}
+
+function writeToday(value) {
+    net.setCacheValue('today', value);
+    return value;
+}
+
+// 在线写入之后也要把本地缓存改一下，否则同一次会话里切到离线就会看到旧数据
+function cacheTodayChange(apply) {
+    const today = net.cacheValue('today');
+    if (!today) return;
+    apply(today);
+    net.setCacheValue('today', today);
+}
+
+function localCheckin(day, content) {
+    const user = store.getUser() || {};
+    return {
+        id: net.localId('checkin'),
+        user_id: user.id,
+        checkin_date: day,
+        content: content || '',
+        created_at: new Date().toISOString()
+    };
+}
+
+function localTask(checkinId, content, completed) {
+    const user = store.getUser() || {};
+    return {
+        id: net.localId('task'),
+        user_id: user.id,
+        checkin_id: checkinId,
+        content,
+        completed: !!completed,
+        created_at: new Date().toISOString()
+    };
+}
+
+// 离线打卡 / 加任务只影响「打卡天数、连续天数、任务数、完成数」，
+// 在本地做增量即可，和 dashboard.js 的 applyTaskDelta 是同一套口径；
+// 同步完成后会把这两个缓存丢掉，下次读到服务端算出的精确值
+function bumpTaskStats(totalDelta, doneDelta) {
+    const stats = net.cacheValue('stats');
+    if (stats) {
+        stats.totalTasks = Math.max(0, (stats.totalTasks || 0) + totalDelta);
+        stats.completedTasks = Math.max(0, (stats.completedTasks || 0) + doneDelta);
+        stats.completionRate = stats.totalTasks
+            ? Math.round((stats.completedTasks / stats.totalTasks) * 100)
+            : 0;
+        net.setCacheValue('stats', stats);
+    }
+
+    const history = net.cacheValue('history');
+    const day = readToday().checkin && readToday().checkin.checkin_date;
+    if (!Array.isArray(history) || !day) return;
+
+    const entry = history.find(item => item.checkin_date === day);
+    if (!entry) return;
+
+    entry.taskCount = Math.max(0, (entry.taskCount || 0) + totalDelta);
+    entry.completedTaskCount = Math.max(0, (entry.completedTaskCount || 0) + doneDelta);
+    net.setCacheValue('history', history);
+}
+
+function bumpCheckinStats(checkin) {
+    const stats = net.cacheValue('stats');
+    if (stats) {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const history = net.cacheValue('history') || [];
+        // 昨天也打过卡才算续上，否则从 1 重新数
+        const continued = Array.isArray(history)
+            && history.some(item => item.checkin_date === todayStr(yesterday));
+
+        stats.totalDays = (stats.totalDays || 0) + 1;
+        stats.streak = continued ? (stats.streak || 0) + 1 : 1;
+        net.setCacheValue('stats', stats);
+    }
+
+    const history = net.cacheValue('history');
+    if (!Array.isArray(history)) return;
+    if (history.some(item => item.checkin_date === checkin.checkin_date)) return;
+
+    history.unshift({
+        id: checkin.id,
+        checkin_date: checkin.checkin_date,
+        content: checkin.content,
+        created_at: checkin.created_at,
+        taskCount: 0,
+        completedTaskCount: 0
+    });
+    net.setCacheValue('history', history);
+}
+
+// 依赖联网的功能在离线时给一句能看懂的提示，而不是让用户撞上 Failed to fetch
+function offlineUnsupported(name) {
+    fail(`离线模式：「${name}」需要联网`, 400);
+}
+
+// 服务端返回的都是 uuid；不是 uuid 的就是离线期间本地造的 id。
+// 离线新建的任务，之后的勾选 / 删除直接改队列里那条，不需要等同步拿到真实 id
+const SERVER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isLocalTaskId(id) {
+    return !SERVER_ID.test(String(id || ''));
+}
+
+function updateQueuedTask(localId, patch) {
+    const entry = net.pending().find(op => op.kind === 'task.add' && op.localId === localId);
+    if (entry) net.enqueue({ ...entry, ...patch });
+}
+
+function offlineToggleTask(id, completed) {
+    const today = readToday();
+    const task = today.tasks.find(item => item.id === id);
+    if (!task) fail('这个任务在本地找不到', 404);
+
+    const was = task.completed;
+    task.completed = !!completed;
+    writeToday(today);
+    if (was !== task.completed) bumpTaskStats(0, task.completed ? 1 : -1);
+
+    if (isLocalTaskId(id)) updateQueuedTask(id, { completed: task.completed });
+    else net.enqueue({ kind: 'task.update', id, completed: task.completed });
+
+    return { task };
+}
+
+function offlineRemoveTask(id) {
+    const today = readToday();
+    const index = today.tasks.findIndex(item => item.id === id);
+    if (index < 0) return {};
+
+    const [task] = today.tasks.splice(index, 1);
+    writeToday(today);
+    bumpTaskStats(-1, task.completed ? -1 : 0);
+
+    if (isLocalTaskId(id)) updateQueuedTask(id, { deleted: true });
+    else net.enqueue({ kind: 'task.remove', id });
+
+    return {};
+}
+
+/* ---------------- 同步：把离线期间的改动补传到云端 ---------------- */
+
+// 每天最多一条打卡记录，已经打过就当成功（唯一约束 23505）
+async function ensureCheckin(day, content = '') {
+    const user = await requireUser();
+
+    const existing = await supabase
+        .from('checkins')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('checkin_date', day)
+        .maybeSingle();
+
+    if (existing.error) fail(existing.error.message, 500);
+    if (existing.data) return mapCheckin(existing.data);
+
+    const created = await supabase
+        .from('checkins')
+        .insert({ user_id: user.id, checkin_date: day, content: content || '' })
+        .select()
+        .single();
+
+    if (created.error) {
+        // 并发撞上唯一约束：重查一次，按已经打过处理
+        if (created.error.code === '23505') {
+            const again = await supabase
+                .from('checkins')
+                .select('*')
+                .eq('user_id', user.id)
+                .eq('checkin_date', day)
+                .maybeSingle();
+            if (again.data) return mapCheckin(again.data);
+        }
+        fail(created.error.message, 500);
+    }
+
+    return mapCheckin(created.data);
+}
+
+net.registerSyncHandler('checkin', async op => {
+    await ensureCheckin(op.day, op.content);
+});
+
+net.registerSyncHandler('task.add', async op => {
+    // 离线期间被删掉的任务不用补传
+    if (op.deleted) return;
+
+    const user = await requireUser();
+    const checkin = await ensureCheckin(op.day);
+
+    const { error } = await supabase.from('tasks').insert({
+        user_id: user.id,
+        checkin_id: checkin.id,
+        content: op.content,
+        completed: !!op.completed
+    });
+
+    if (error) fail(error.message, 500);
+});
+
+net.registerSyncHandler('task.update', async op => {
+    // 任务被删过的话更新 0 行，也算正常结果
+    const { error } = await supabase.from('tasks').update({ completed: !!op.completed }).eq('id', op.id);
+    if (error) fail(error.message, 500);
+});
+
+net.registerSyncHandler('task.remove', async op => {
+    const { error } = await supabase.from('tasks').delete().eq('id', op.id);
+    if (error) fail(error.message, 500);
+});
+
+net.registerSyncHandler('study', async op => {
+    const session = await supabase.rpc('start_study_session', {
+        p_mode: op.mode,
+        p_book_id: op.bookId || null,
+        p_book_name: op.bookName || '',
+        p_total: op.total || 0
+    });
+
+    if (session.error) fail(session.error.message, 500);
+
+    // 熟练度仍然由服务端算，客户端不自己实现一套
+    for (const review of op.reviews || []) {
+        const { error } = await supabase.rpc('record_word_review', {
+            p_session_id: session.data || null,
+            p_word_id: review.wordId,
+            p_result: review.result
+        });
+        if (error) fail(error.message, 500);
+    }
+});
+
+net.registerSyncHandler('vocab', async op => {
+    const user = await requireUser();
+
+    const { error } = await supabase.from('vocab_tests').insert({
+        user_id: user.id,
+        estimate: op.estimate,
+        low: op.low,
+        high: op.high,
+        total: op.total,
+        known: op.known,
+        duration_ms: op.durationMs || 0,
+        bands: op.bands || []
+    });
+
+    if (error) fail(error.message, 500);
+});
+
+net.registerSyncHandler('vocab.remove', async op => {
+    const { error } = await supabase.from('vocab_tests').delete().eq('id', op.id);
+    if (error) fail(error.message, 500);
+});
+
 export const api = {
     async register({ email, nickname, password }) {
         const { data, error } = await supabase.auth.signUp({
@@ -242,6 +508,19 @@ export const api = {
     },
 
     async checkIn(content = '') {
+        if (net.isOffline()) {
+            const day = todayStr();
+            const today = readToday();
+            if (today.checkin) fail('今天已经打卡过了', 400);
+
+            const checkin = localCheckin(day, content);
+            writeToday({ checked: true, checkin, tasks: [] });
+            bumpCheckinStats(checkin);
+            net.enqueue({ kind: 'checkin', day, content: content || '' });
+
+            return { checkin };
+        }
+
         const user = await requireUser();
         const { data, error } = await supabase
             .from('checkins')
@@ -254,89 +533,102 @@ export const api = {
             fail(error.message, 500);
         }
 
-        return { checkin: mapCheckin(data) };
+        const checkin = mapCheckin(data);
+        cacheTodayChange(today => {
+            today.checked = true;
+            today.checkin = checkin;
+            today.tasks = [];
+        });
+
+        return { checkin };
     },
 
     async getToday() {
-        const user = await requireUser();
-        const checkin = await getTodayCheckin(user.id);
-        if (!checkin) return { checked: false, checkin: null, tasks: [] };
+        return net.cached('today', async () => {
+            const user = await requireUser();
+            const checkin = await getTodayCheckin(user.id);
+            if (!checkin) return emptyToday();
 
-        const { data, error } = await supabase
-            .from('tasks')
-            .select('*')
-            .eq('checkin_id', checkin.id)
-            .order('created_at', { ascending: true });
+            const { data, error } = await supabase
+                .from('tasks')
+                .select('*')
+                .eq('checkin_id', checkin.id)
+                .order('created_at', { ascending: true });
 
-        if (error) fail(error.message, 500);
+            if (error) fail(error.message, 500);
 
-        return {
-            checked: true,
-            checkin: mapCheckin(checkin),
-            tasks: (data || []).map(mapTask)
-        };
+            return {
+                checked: true,
+                checkin: mapCheckin(checkin),
+                tasks: (data || []).map(mapTask)
+            };
+        });
     },
 
     // 统计全部在数据库一次算完，替代原来的 4 次 count 请求
     async stats() {
-        await requireUser();
+        return net.cached('stats', async () => {
+            await requireUser();
 
-        const { data, error } = await supabase.rpc('my_stats');
-        if (error) fail(error.message, 500);
+            const { data, error } = await supabase.rpc('my_stats');
+            if (error) fail(error.message, 500);
 
-        const row = (data && data[0]) || {};
-        const totalTasks = row.total_tasks || 0;
-        const completedTasks = row.completed_tasks || 0;
+            const row = (data && data[0]) || {};
+            const totalTasks = row.total_tasks || 0;
+            const completedTasks = row.completed_tasks || 0;
 
-        return {
-            totalDays: row.total_days || 0,
-            totalTasks,
-            completedTasks,
-            completionRate: totalTasks ? Math.round((completedTasks / totalTasks) * 100) : 0,
-            streak: row.streak || 0
-        };
+            return {
+                totalDays: row.total_days || 0,
+                totalTasks,
+                completedTasks,
+                completionRate: totalTasks ? Math.round((completedTasks / totalTasks) * 100) : 0,
+                streak: row.streak || 0
+            };
+        });
     },
 
     async history(limit = 30) {
-        const user = await requireUser();
+        return net.cached('history', async () => {
+            const user = await requireUser();
 
-        const { data: checkins, error } = await supabase
-            .from('checkins')
-            .select('*')
-            .eq('user_id', user.id)
-            .order('checkin_date', { ascending: false })
-            .limit(limit);
+            const { data: checkins, error } = await supabase
+                .from('checkins')
+                .select('*')
+                .eq('user_id', user.id)
+                .order('checkin_date', { ascending: false })
+                .limit(limit);
 
-        if (error) fail(error.message, 500);
+            if (error) fail(error.message, 500);
 
-        const rows = checkins || [];
-        if (!rows.length) return [];
+            const rows = checkins || [];
+            if (!rows.length) return [];
 
-        const { data: tasks, error: taskError } = await supabase
-            .from('tasks')
-            .select('checkin_id, completed')
-            .in('checkin_id', rows.map(row => row.id));
+            const { data: tasks, error: taskError } = await supabase
+                .from('tasks')
+                .select('checkin_id, completed')
+                .in('checkin_id', rows.map(row => row.id));
 
-        if (taskError) fail(taskError.message, 500);
+            if (taskError) fail(taskError.message, 500);
 
-        const counts = new Map();
-        (tasks || []).forEach(task => {
-            const entry = counts.get(task.checkin_id) || { total: 0, done: 0 };
-            entry.total++;
-            if (task.completed) entry.done++;
-            counts.set(task.checkin_id, entry);
-        });
+            const counts = new Map();
+            (tasks || []).forEach(task => {
+                const entry = counts.get(task.checkin_id) || { total: 0, done: 0 };
+                entry.total++;
+                if (task.completed) entry.done++;
+                counts.set(task.checkin_id, entry);
+            });
 
-        return rows.map(row => {
-            const entry = counts.get(row.id) || { total: 0, done: 0 };
-            return {
-                id: row.id,
-                checkin_date: row.checkin_date,
-                content: row.content,
-                created_at: row.created_at,
-                taskCount: entry.total,
-                completedTaskCount: entry.done
-            };
+            return rows.map(row => {
+                const entry = counts.get(row.id) || { total: 0, done: 0 };
+                return {
+                    id: row.id,
+                    checkin_date: row.checkin_date,
+                    content: row.content,
+                    created_at: row.created_at,
+                    taskCount: entry.total,
+                    completedTaskCount: entry.done
+                };
+            });
         });
     },
 
@@ -539,6 +831,25 @@ export const api = {
 
     tasks: {
         async add(content) {
+            if (net.isOffline()) {
+                const today = readToday();
+                if (!today.checkin) fail('请先打卡', 400);
+
+                const task = localTask(today.checkin.id, content.trim());
+                today.tasks.push(task);
+                writeToday(today);
+                bumpTaskStats(1, 0);
+                net.enqueue({
+                    kind: 'task.add',
+                    localId: task.id,
+                    day: today.checkin.checkin_date,
+                    content: task.content,
+                    completed: false
+                });
+
+                return { task };
+            }
+
             const user = await requireUser();
             const checkin = await getTodayCheckin(user.id);
             if (!checkin) fail('请先打卡', 400);
@@ -550,12 +861,34 @@ export const api = {
                 .single();
 
             if (error) fail(error.message, 500);
-            return { task: mapTask(data) };
+
+            const task = mapTask(data);
+            cacheTodayChange(today => today.tasks.push(task));
+            return { task };
         },
 
         // 学习（背诵 / 考核 / 消灭错词）结束时自动记一条任务，直接算完成，
         // 这样完成率能反映学习量。今天还没打卡就返回 task: null，由调用方静默跳过
         async addStudyTask(content) {
+            if (net.isOffline()) {
+                const today = readToday();
+                if (!today.checkin) return { task: null };
+
+                const task = localTask(today.checkin.id, String(content || '').trim(), true);
+                today.tasks.push(task);
+                writeToday(today);
+                bumpTaskStats(1, 1);
+                net.enqueue({
+                    kind: 'task.add',
+                    localId: task.id,
+                    day: today.checkin.checkin_date,
+                    content: task.content,
+                    completed: true
+                });
+
+                return { task };
+            }
+
             const user = await requireUser();
             const checkin = await getTodayCheckin(user.id);
             if (!checkin) return { task: null };
@@ -572,10 +905,15 @@ export const api = {
                 .single();
 
             if (error) fail(error.message, 500);
-            return { task: mapTask(data) };
+
+            const task = mapTask(data);
+            cacheTodayChange(today => today.tasks.push(task));
+            return { task };
         },
 
         async toggle(id, completed) {
+            if (net.isOffline()) return offlineToggleTask(id, completed);
+
             await requireUser();
             const { data, error } = await supabase
                 .from('tasks')
@@ -585,13 +923,25 @@ export const api = {
                 .single();
 
             if (error) fail(error.message, 500);
-            return { task: mapTask(data) };
+
+            const task = mapTask(data);
+            cacheTodayChange(today => {
+                const item = today.tasks.find(entry => entry.id === task.id);
+                if (item) item.completed = task.completed;
+            });
+            return { task };
         },
 
         async remove(id) {
+            if (net.isOffline()) return offlineRemoveTask(id);
+
             await requireUser();
             const { error } = await supabase.from('tasks').delete().eq('id', id);
             if (error) fail(error.message, 500);
+
+            cacheTodayChange(today => {
+                today.tasks = today.tasks.filter(entry => entry.id !== id);
+            });
             return {};
         }
     },
@@ -599,33 +949,37 @@ export const api = {
     wordbooks: {
         // 列表带上每个本子的单词数，避免为计数再发 N 次请求
         async list() {
-            await requireUser();
-            const { data, error } = await supabase
-                .from('wordbooks')
-                .select('id, name, created_at, words(count)')
-                .order('created_at', { ascending: false });
+            return net.cached('books', async () => {
+                await requireUser();
+                const { data, error } = await supabase
+                    .from('wordbooks')
+                    .select('id, name, created_at, words(count)')
+                    .order('created_at', { ascending: false });
 
-            if (error) fail(error.message, 500);
-            return (data || []).map(mapBook);
+                if (error) fail(error.message, 500);
+                return (data || []).map(mapBook);
+            });
         },
 
         async detail(id) {
-            await requireUser();
+            return net.cached(`book:${id}`, async () => {
+                await requireUser();
 
-            const { data: book, error } = await supabase
-                .from('wordbooks')
-                .select('id, name, created_at')
-                .eq('id', id)
-                .maybeSingle();
+                const { data: book, error } = await supabase
+                    .from('wordbooks')
+                    .select('id, name, created_at')
+                    .eq('id', id)
+                    .maybeSingle();
 
-            if (error) fail(error.message, 500);
-            if (!book) fail('单词本不存在或已被删除', 404);
+                if (error) fail(error.message, 500);
+                if (!book) fail('单词本不存在或已被删除', 404);
 
-            const list = await fetchAllWords(id);
-            return {
-                book: { id: book.id, name: book.name, created_at: book.created_at, wordCount: list.length },
-                words: list
-            };
+                const list = await fetchAllWords(id);
+                return {
+                    book: { id: book.id, name: book.name, created_at: book.created_at, wordCount: list.length },
+                    words: list
+                };
+            });
         },
 
         async create({ name, words }) {
@@ -679,8 +1033,23 @@ export const api = {
             return {};
         },
 
-        // 开始一次背诵 / 考核，返回会话 id（前端在第一次作答时才调用）
+        // 开始一次背诵 / 考核，返回会话 id（前端在第一次作答时才调用）。
+        // 离线时先返回一个本地 runId，同步时再真正建会话，逐词作答挂在同一条队列里
         async startSession({ mode, bookId, bookName, total }) {
+            if (net.isOffline()) {
+                const runId = net.localId('run');
+                net.enqueue({
+                    kind: 'study',
+                    runId,
+                    mode,
+                    bookId: bookId || null,
+                    bookName: bookName || '',
+                    total: total || 0,
+                    reviews: []
+                });
+                return runId;
+            }
+
             await requireUser();
             const { data, error } = await supabase.rpc('start_study_session', {
                 p_mode: mode,
@@ -695,7 +1064,20 @@ export const api = {
 
         // 背诵/考核一次作答：服务端同时更新单词进度、写明细、累加会话统计。
         // 返回更新后的单词进度，调用方用它覆盖本地的乐观更新。
+        // 离线时只把作答记进队列，返回 null —— 界面本来就已经做过乐观更新，不用再覆盖
         async recordReview(sessionId, wordId, result) {
+            if (net.isOffline()) {
+                const entry = net.pending().find(op => op.kind === 'study' && op.runId === sessionId);
+                if (entry) {
+                    net.enqueue({
+                        kind: 'study',
+                        runId: sessionId,
+                        reviews: [{ wordId, result, at: Date.now() }]
+                    });
+                }
+                return null;
+            }
+
             await requireUser();
             const { data, error } = await supabase.rpc('record_word_review', {
                 p_session_id: sessionId || null,
@@ -709,52 +1091,58 @@ export const api = {
 
         // 学习记录：最近的背诵 / 考核会话，按时间倒序
         async records(limit = 120) {
-            await requireUser();
-            const { data, error } = await supabase
-                .from('study_sessions')
-                .select('id, book_id, book_name, mode, total, known, vague, again, correct, wrong, created_at')
-                .order('created_at', { ascending: false })
-                .limit(limit);
+            return net.cached('records', async () => {
+                await requireUser();
+                const { data, error } = await supabase
+                    .from('study_sessions')
+                    .select('id, book_id, book_name, mode, total, known, vague, again, correct, wrong, created_at')
+                    .order('created_at', { ascending: false })
+                    .limit(limit);
 
-            if (error) fail(error.message, 500);
-            return (data || []).map(mapSession);
+                if (error) fail(error.message, 500);
+                return (data || []).map(mapSession);
+            });
         },
 
         // 单条学习记录；详情页直接按 id 取，不依赖列表的条数上限
         async session(id) {
-            await requireUser();
-            const { data, error } = await supabase
-                .from('study_sessions')
-                .select('id, book_id, book_name, mode, total, known, vague, again, correct, wrong, created_at')
-                .eq('id', id)
-                .maybeSingle();
+            return net.cached(`session:${id}`, async () => {
+                await requireUser();
+                const { data, error } = await supabase
+                    .from('study_sessions')
+                    .select('id, book_id, book_name, mode, total, known, vague, again, correct, wrong, created_at')
+                    .eq('id', id)
+                    .maybeSingle();
 
-            if (error) fail(error.message, 500);
-            return data ? mapSession(data) : null;
+                if (error) fail(error.message, 500);
+                return data ? mapSession(data) : null;
+            });
         },
 
         // 单次会话的逐词明细，展开记录时才拉取；整本背诵可能上千条，分页取全
         async sessionLogs(sessionId) {
-            await requireUser();
-            const all = [];
+            return net.cached(`logs:${sessionId}`, async () => {
+                await requireUser();
+                const all = [];
 
-            for (let from = 0; ; from += LOGS_PAGE_SIZE) {
-                const { data, error } = await supabase
-                    .from('study_logs')
-                    .select('id, word_id, term, meaning, result, created_at')
-                    .eq('session_id', sessionId)
-                    .order('created_at', { ascending: true })
-                    .order('id', { ascending: true })
-                    .range(from, from + LOGS_PAGE_SIZE - 1);
+                for (let from = 0; ; from += LOGS_PAGE_SIZE) {
+                    const { data, error } = await supabase
+                        .from('study_logs')
+                        .select('id, word_id, term, meaning, result, created_at')
+                        .eq('session_id', sessionId)
+                        .order('created_at', { ascending: true })
+                        .order('id', { ascending: true })
+                        .range(from, from + LOGS_PAGE_SIZE - 1);
 
-                if (error) fail(error.message, 500);
+                    if (error) fail(error.message, 500);
 
-                const rows = data || [];
-                all.push(...rows);
-                if (rows.length < LOGS_PAGE_SIZE) break;
-            }
+                    const rows = data || [];
+                    all.push(...rows);
+                    if (rows.length < LOGS_PAGE_SIZE) break;
+                }
 
-            return all;
+                return all;
+            });
         },
 
         // 导出用：这个用户所有答错过的词（跨单词本），错得多的排前面
@@ -815,6 +1203,29 @@ export const api = {
     // 词汇量测试：每次估算结果都在云端留一条，便于看词汇量随时间的变化
     vocab: {
         async save({ estimate, low, high, total, known, durationMs, bands }) {
+            if (net.isOffline()) {
+                // 估算完全在本地算出来，先写进本地历史，联网后再补传
+                const test = {
+                    id: net.localId('vocab'),
+                    estimate,
+                    low,
+                    high,
+                    total,
+                    known,
+                    durationMs: durationMs || 0,
+                    bands: bands || [],
+                    createdAt: new Date().toISOString()
+                };
+
+                const history = net.cacheValue('vocabHistory');
+                const list = Array.isArray(history) ? history : [];
+                list.unshift(test);
+                net.setCacheValue('vocabHistory', list);
+
+                net.enqueue({ kind: 'vocab', estimate, low, high, total, known, durationMs, bands });
+                return test;
+            }
+
             const user = await requireUser();
             const { data, error } = await supabase
                 .from('vocab_tests')
@@ -836,18 +1247,33 @@ export const api = {
         },
 
         async list(limit = 50) {
-            await requireUser();
-            const { data, error } = await supabase
-                .from('vocab_tests')
-                .select('id, estimate, low, high, total, known, duration_ms, bands, created_at')
-                .order('created_at', { ascending: false })
-                .limit(limit);
+            return net.cached('vocabHistory', async () => {
+                await requireUser();
+                const { data, error } = await supabase
+                    .from('vocab_tests')
+                    .select('id, estimate, low, high, total, known, duration_ms, bands, created_at')
+                    .order('created_at', { ascending: false })
+                    .limit(limit);
 
-            if (error) fail(error.message, 500);
-            return (data || []).map(mapVocabTest);
+                if (error) fail(error.message, 500);
+                return (data || []).map(mapVocabTest);
+            });
         },
 
         async remove(id) {
+            if (net.isOffline()) {
+                // 还没同步的记录直接从队列里撤掉，其余的等联网再删
+                if (SERVER_ID.test(String(id || ''))) {
+                    net.enqueue({ kind: 'vocab.remove', id });
+                }
+
+                const history = net.cacheValue('vocabHistory');
+                if (Array.isArray(history)) {
+                    net.setCacheValue('vocabHistory', history.filter(item => item.id !== id));
+                }
+                return {};
+            }
+
             await requireUser();
             const { error } = await supabase.from('vocab_tests').delete().eq('id', id);
             if (error) fail(error.message, 500);
@@ -855,6 +1281,36 @@ export const api = {
         }
     }
 };
+
+// 这几类必须联网：离线时给一句能看懂的提示，而不是让用户撞上 Failed to fetch
+const ONLINE_ONLY = {
+    'profile.update': '修改个人资料',
+    'profile.saveImage': '上传图片',
+    'profile.clearImage': '移除图片',
+    'profile.changePassword': '修改密码',
+    'friends.addByEmail': '添加好友',
+    'friends.remove': '删除好友',
+    'likes.toggle': '点赞',
+    'feedback.create': '提交反馈',
+    'feedback.remove': '删除反馈',
+    'wordbooks.create': '新建单词本',
+    'wordbooks.addWords': '追加单词',
+    'wordbooks.rename': '重命名单词本',
+    'wordbooks.remove': '删除单词本',
+    'wordbooks.removeWord': '删除单词',
+    'wordbooks.resetProgress': '清空背诵进度'
+};
+
+for (const [name, label] of Object.entries(ONLINE_ONLY)) {
+    const [group, method] = name.split('.');
+    const target = api[group];
+    const original = target[method];
+
+    target[method] = (...args) => {
+        if (net.isOffline()) offlineUnsupported(label);
+        return original.apply(target, args);
+    };
+}
 
 // Supabase 默认单次最多返回 1000 行（Dashboard → Integrations → Data API → Max rows），
 // 单词本常有上千词，必须分页取，否则会被静默截断

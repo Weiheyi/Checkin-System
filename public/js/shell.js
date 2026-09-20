@@ -2,8 +2,9 @@ import { PAGES } from './config.js';
 import { store } from './store.js';
 import { api } from './api.js';
 import { resolvedTheme, setTheme } from './theme.js';
-import { paintAvatar, showGuideTip, guideTipOff } from './ui.js';
+import { paintAvatar, showGuideTip, guideTipOff, toast } from './ui.js';
 import { registerOffline } from './offline.js';
+import * as net from './net.js';
 
 // 应用页共用同一套导航，新增页面时只改这里
 const NAV = [
@@ -77,7 +78,11 @@ export function mountShell({ active }) {
                 <button class="icon-btn" id="shellTheme" type="button" aria-label="切换主题">🌙</button>
                 <button class="btn-ghost" id="shellLogout" type="button">退出</button>
             </div>
-        </header>`;
+        </header>
+        <div class="net-banner" id="netBanner" hidden>
+            <span class="net-banner-text" id="netBannerText"></span>
+            <button class="net-banner-action" id="netBannerAction" type="button">切回在线并同步</button>
+        </div>`;
 
     const tabbar = document.createElement('nav');
     tabbar.className = 'tabbar';
@@ -89,6 +94,9 @@ export function mountShell({ active }) {
     els.name = host.querySelector('#shellName');
     els.sub = host.querySelector('#shellSub');
     els.theme = host.querySelector('#shellTheme');
+    els.netBanner = host.querySelector('#netBanner');
+    els.netBannerText = host.querySelector('#netBannerText');
+    els.netBannerAction = host.querySelector('#netBannerAction');
 
     host.querySelector('#shellLogout').addEventListener('click', logout);
     els.theme.addEventListener('click', () => {
@@ -96,6 +104,11 @@ export function mountShell({ active }) {
     });
     // 主题可能在别处被改（比如个人中心的设置），这里跟着同步图标
     window.addEventListener('themechange', paintThemeButton);
+
+    els.netBannerAction.addEventListener('click', syncFromBanner);
+    net.initNet();
+    net.subscribe(renderNetBanner);
+    renderNetBanner();
 
     const cached = store.getUser();
     if (cached) setShellUser(cached);
@@ -125,6 +138,44 @@ export function setShellUser(user) {
     if (!els.avatar) return;
     paintAvatar(els.avatar, user);
     els.name.textContent = user.nickname || user.email || '用户';
+}
+
+/* ---------------- 离线状态横幅 ---------------- */
+
+// 处在离线模式、断网、或还有改动没同步时，全站顶部显示一条横幅
+function renderNetBanner() {
+    if (!els.netBanner) return;
+
+    const count = net.pendingCount();
+    els.netBanner.hidden = !net.isOffline() && !count;
+    if (els.netBanner.hidden) return;
+
+    const why = net.mode() === 'offline'
+        ? '离线模式'
+        : (!navigator.onLine ? '设备没有网络' : '网络请求失败');
+
+    const state = net.syncingNow()
+        ? '正在同步…'
+        : (count ? `${count} 项待同步` : '改动会先存在本机');
+
+    els.netBannerText.textContent = `📴 ${why} · ${state}`;
+    els.netBannerAction.textContent = net.mode() === 'offline' ? '切回在线并同步' : '重试同步';
+}
+
+async function syncFromBanner() {
+    if (net.mode() === 'offline') net.setMode('online');
+
+    const result = await net.sync();
+
+    if (result.skipped) {
+        toast('还是连不上网，稍后再试', 'error');
+        return;
+    }
+    if (result.failed) {
+        toast(`同步没完成：${net.lastSyncError()}（还有 ${result.failed} 项留着）`, 'error');
+        return;
+    }
+    toast(result.synced ? `已同步 ${result.synced} 项` : '没有需要同步的改动', 'success');
 }
 
 // 自定义背景：铺满视口垫在内容下面，透明度由用户设置。

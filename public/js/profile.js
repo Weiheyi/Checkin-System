@@ -5,6 +5,7 @@ import { getTheme, setTheme, getAccent, setAccent, getUiAlpha, applyUiAlpha, set
 import { $, $$, toast, setLoading, paintAvatar } from './ui.js';
 import { initShell, setShellUser, setBackgroundOpacity, logout } from './shell.js';
 import { cropImage } from './image-crop.js';
+import * as net from './net.js';
 
 const els = {};
 let currentUser = null;
@@ -27,6 +28,7 @@ function cacheElements() {
     els.completionRate = $('#completionRate');
 
     els.themeGroup = $('#themeGroup');
+    els.netModeGroup = $('#netModeGroup');
     els.accentGroup = $('#accentGroup');
     els.uiAlpha = $('#uiAlpha');
     els.uiAlphaValue = $('#uiAlphaValue');
@@ -165,6 +167,13 @@ function renderThemeGroup() {
     });
 }
 
+// 离线模式开关：状态取自 net，切回在线时会自动开始同步
+function renderNetModeGroup() {
+    $$('#netModeGroup button').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.netMode === net.mode());
+    });
+}
+
 // 「界面样式」的配色按钮由 config 里的 ACCENTS 生成，以后想再加只改那一个数组
 function renderAccentGroup() {
     const current = getAccent();
@@ -275,7 +284,9 @@ async function loadFeedback() {
         renderFeedbackList(await api.feedback.list());
     } catch (err) {
         els.feedbackList.className = 'feedback-list';
-        els.feedbackList.textContent = err.message;
+        els.feedbackList.textContent = net.isOffline()
+            ? '离线模式下看不到历史反馈，联网后再试'
+            : err.message;
     }
 }
 
@@ -382,6 +393,23 @@ function bindEvents() {
     // 顶部栏切换主题时，这里的选中状态也要跟着变
     window.addEventListener('themechange', renderThemeGroup);
 
+    els.netModeGroup.addEventListener('click', event => {
+        const btn = event.target.closest('button[data-net-mode]');
+        if (!btn) return;
+
+        const previous = net.mode();
+        net.setMode(btn.dataset.netMode);
+        renderNetModeGroup();
+
+        if (btn.dataset.netMode === previous) return;
+
+        if (btn.dataset.netMode === 'offline') {
+            toast('已切到离线模式，改动会先存在本机', 'info');
+        } else {
+            toast('已切回在线，正在补传离线期间的改动…', 'info');
+        }
+    });
+
     // 界面透明度：拖动即时预览，松手才写本地存储
     els.uiAlpha.addEventListener('input', () => {
         const value = Number(els.uiAlpha.value);
@@ -449,22 +477,30 @@ async function init() {
     cacheElements();
     bindEvents();
     renderThemeGroup();
+    renderNetModeGroup();
     renderAccentGroup();
     renderUiAlpha();
+
+    // 断网时界面上的开关也要跟着显示成「离线」
+    net.subscribe(renderNetModeGroup);
 
     // 先用缓存渲染，避免空白；随后拉一次最新资料
     const cached = store.getUser();
     if (cached) applyUser(cached);
 
     try {
-        const [{ user }, stats] = await Promise.all([api.me(), api.stats()]);
-        applyUser(user);
+        // 离线时拿不到最新资料，用上面已经渲染好的本地缓存就够了
+        const [me, stats] = await Promise.all([api.me().catch(() => null), api.stats()]);
+        if (me) {
+            applyUser(me.user);
+            renderJoined(me.user);
+        }
         renderStats(stats);
-        renderJoined(user);
-        await loadFeedback();
     } catch (err) {
         toast(err.message, 'error');
     }
+
+    await loadFeedback();
 }
 
 if (initShell({ active: 'profile' })) init();
