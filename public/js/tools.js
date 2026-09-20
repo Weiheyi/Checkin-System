@@ -6,6 +6,7 @@ import { extractFile, ACCEPT } from './file-extract.js';
 import { phoneticOf, loadPhonetics, phoneticsReady, speak, warmUpVoices } from './phonetic.js';
 import { dictReady, loadDictionary, meaningOf, meaningLines } from './dictionary.js';
 import { createVocabTool } from './vocab.js';
+import * as net from './net.js';
 
 const els = {};
 const BASE_TITLE = document.title;
@@ -590,8 +591,11 @@ function showWordView(view) {
     els.wordRecords.hidden = view !== 'records';
 }
 
+const EMPTY_BOOKS_TEXT = '还没有单词本，点「新建」粘贴一份单词表就能开始了';
+
 function renderBooks() {
     const books = wordsState.books;
+    els.bookEmpty.textContent = EMPTY_BOOKS_TEXT;
     els.bookEmpty.hidden = books.length > 0;
     els.bookList.replaceChildren();
 
@@ -2347,6 +2351,8 @@ function openRecords() {
         })
         .catch(err => {
             els.recordList.replaceChildren();
+            els.recordsEmpty.hidden = false;
+            els.recordsEmpty.textContent = err.message;
             toast(err.message, 'error');
         });
 }
@@ -3437,6 +3443,29 @@ function bindEvents() {
     els.addSave.addEventListener('click', saveAddWords);
 }
 
+// 在线时把还没缓存过的内容在后台存一份，这样之后切到离线模式能直接用
+// （离线缓存只由「在线成功读过」的内容填充；已经有缓存的不重复请求）
+async function warmUpOfflineCache() {
+    for (const book of wordsState.books) {
+        if (net.isOffline()) return;
+        if (net.cacheValue(`book:${book.id}`) !== undefined) continue;
+
+        try {
+            await api.wordbooks.detail(book.id);
+        } catch {
+            // 预热失败不影响当前使用，下次在线打开工具页会再试
+        }
+    }
+
+    if (net.isOffline() || net.cacheValue('records') !== undefined) return;
+
+    try {
+        await api.wordbooks.records(200);
+    } catch {
+        /* 同上 */
+    }
+}
+
 async function init() {
     cacheElements();
     bindEvents();
@@ -3447,7 +3476,11 @@ async function init() {
     try {
         wordsState.books = await api.wordbooks.list();
         renderBooks();
+        if (!net.isOffline()) warmUpOfflineCache();
     } catch (err) {
+        // 列表区直接把原因写出来：离线且没缓存过时只弹 toast，用户会以为单词本丢了
+        els.bookEmpty.hidden = false;
+        els.bookEmpty.textContent = err.message;
         toast(err.message, 'error');
     }
 }
