@@ -235,7 +235,11 @@ export function createVocabTool(panel) {
             els.introHint.hidden = true;
             loadHistory();
         } catch (error) {
-            els.introHint.textContent = `词库加载失败：${error.message}`;
+            // 词库是大文件，只在真正用到时才缓存；没缓存过又连不上网就加载不了
+            const offline = !navigator.onLine || /fetch|network/i.test(error.message);
+            els.introHint.textContent = offline
+                ? '词库加载失败：现在连不上网，而词库还没缓存过 —— 联网打开一次这里（或「字典」），之后就能离线用了'
+                : `词库加载失败：${error.message}`;
         } finally {
             els.start.disabled = false;
         }

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>使用说明 - 学习打卡系统</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="manifest" href="manifest.json">
     <link rel="preconnect" href="https://dhemqusvocjcbfvopwcm.supabase.co" crossorigin>
     <link rel="stylesheet" href="css/style.css">
     <script>
@@ -215,8 +216,15 @@
                     首次要加载约 6MB 词库，加载过一次后就完全离线、秒出。</li>
                 <li><b>忘记密码了？</b><br>
                     站点不依赖邮件，暂时没法自助找回，请联系站长重置。</li>
+                <li><b>断网了还能用吗？</b><br>
+                    访问过一次之后就行：页面、背单词、字典、词汇量测试都能离线用。做法是浏览器把页面和
+                    代码存了一份（Service Worker），联网时自动取最新的。<br>
+                    但<b>字典和词汇量测试的约 6MB 词库是「用到时才缓存」</b>，
+                    所以要联网打开过一次，之后才离线可用。<br>
+                    登录、打卡、好友、保存学习记录与测试结果<b>必须联网</b>，离线时打开会提示请求失败。</li>
                 <li><b>手机上怎么看？</b><br>
-                    直接用手机浏览器打开即可，底部有导航栏；也可以「添加到主屏幕」当 App 用。</li>
+                    直接用手机浏览器打开即可，底部有导航栏；也可以「添加到主屏幕」当 App 用，
+                    装好之后断网也能打开。</li>
             </ul>
         </section>
     </div>

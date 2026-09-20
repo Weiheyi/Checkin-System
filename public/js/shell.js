@@ -3,6 +3,7 @@ import { store } from './store.js';
 import { api } from './api.js';
 import { resolvedTheme, setTheme } from './theme.js';
 import { paintAvatar, showGuideTip, guideTipOff } from './ui.js';
+import { registerOffline } from './offline.js';
 
 // 应用页共用同一套导航，新增页面时只改这里
 const NAV = [
@@ -181,6 +182,7 @@ export function setShellSub(text) {
 // 登录守卫 + 渲染外壳，返回 false 表示已跳转登录页，页面应停止初始化
 export function initShell({ active }) {
     if (!requireLogin()) return false;
+    registerOffline();
     mountShell({ active });
     return true;
 }
