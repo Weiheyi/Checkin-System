@@ -188,6 +188,86 @@ export function confirmDialog({
     });
 }
 
+// 列一组选项让用户挑一个（「把词加到哪本单词本」这类）；取消或按 Esc 返回 null
+export function chooseDialog({ title = '请选择', message = '', options = [], cancelText = '取消' } = {}) {
+    return new Promise(resolve => {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+
+        const box = document.createElement('div');
+        box.className = 'modal-box';
+        box.setAttribute('role', 'dialog');
+        box.setAttribute('aria-modal', 'true');
+
+        const heading = document.createElement('h4');
+        heading.className = 'modal-title';
+        heading.textContent = title;
+        box.appendChild(heading);
+
+        if (message) {
+            const text = document.createElement('p');
+            text.className = 'modal-text tight';
+            text.textContent = message;
+            box.appendChild(text);
+        }
+
+        const list = document.createElement('div');
+        list.className = 'choose-list';
+
+        options.forEach(option => {
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'choose-item';
+            item.textContent = option.label;
+
+            if (option.hint) {
+                const hint = document.createElement('span');
+                hint.className = 'choose-hint';
+                hint.textContent = option.hint;
+                item.appendChild(hint);
+            }
+
+            item.addEventListener('click', () => close(option.value));
+            list.appendChild(item);
+        });
+
+        box.appendChild(list);
+
+        const actions = document.createElement('div');
+        actions.className = 'modal-actions';
+
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.className = 'btn-ghost';
+        cancel.textContent = cancelText;
+
+        actions.appendChild(cancel);
+        box.appendChild(actions);
+
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+
+        function close(result) {
+            overlay.classList.remove('show');
+            document.removeEventListener('keydown', onKey);
+            setTimeout(() => overlay.remove(), 180);
+            resolve(result);
+        }
+
+        function onKey(event) {
+            if (event.key === 'Escape') close(null);
+        }
+
+        cancel.addEventListener('click', () => close(null));
+        overlay.addEventListener('click', event => {
+            if (event.target === overlay) close(null);
+        });
+        document.addEventListener('keydown', onKey);
+
+        requestAnimationFrame(() => overlay.classList.add('show'));
+    });
+}
+
 /* ---------------- 使用说明提醒 ---------------- */
 
 const GUIDE_TIP_KEY = 'checkin_guide_tip_off';

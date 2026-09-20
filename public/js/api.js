@@ -298,6 +298,54 @@ function bumpCheckinStats(checkin) {
     net.setCacheValue('history', history);
 }
 
+// 单词本详情：detail() 与 addWord() 共用
+async function fetchBookDetail(id) {
+    await requireUser();
+
+    const { data: book, error } = await supabase
+        .from('wordbooks')
+        .select('id, name, created_at')
+        .eq('id', id)
+        .maybeSingle();
+
+    if (error) fail(error.message, 500);
+    if (!book) fail('单词本不存在或已被删除', 404);
+
+    const list = await fetchAllWords(id);
+    return {
+        book: { id: book.id, name: book.name, created_at: book.created_at, wordCount: list.length },
+        words: list
+    };
+}
+
+// 同一个词不重复加：先看本地缓存，没有再拉一次详情
+async function bookHasWord(bookId, term) {
+    const cached = net.cacheValue(`book:${bookId}`);
+    // 离线又没有缓存时判断不了，直接放行（否则离线就加不了词）
+    if (!cached && net.isOffline()) return false;
+
+    const detail = cached || (await fetchBookDetail(bookId));
+    const key = term.trim().toLowerCase();
+    return (detail.words || []).some(word => String(word.term).trim().toLowerCase() === key);
+}
+
+// 加入成功后把本地缓存也改掉，单词本列表和单词数立刻能看到新的
+function appendToBookCache(bookId, word) {
+    const cached = net.cacheValue(`book:${bookId}`);
+    if (!cached || !Array.isArray(cached.words)) return;
+
+    cached.words.push(word);
+    if (cached.book) cached.book.wordCount = cached.words.length;
+    net.setCacheValue(`book:${bookId}`, cached);
+
+    const books = net.cacheValue('books');
+    if (!Array.isArray(books)) return;
+
+    const book = books.find(item => item.id === bookId);
+    if (book) book.wordCount = cached.words.length;
+    net.setCacheValue('books', books);
+}
+
 // 依赖联网的功能在离线时给一句能看懂的提示，而不是让用户撞上 Failed to fetch
 function offlineUnsupported(name) {
     fail(`离线模式：「${name}」需要联网`, 400);
@@ -437,6 +485,16 @@ net.registerSyncHandler('study', async op => {
         });
         if (error) fail(error.message, 500);
     }
+});
+
+net.registerSyncHandler('words.add', async op => {
+    const user = await requireUser();
+    const start = await nextWordPosition(op.bookId);
+    await insertWords(user.id, op.bookId, op.words || [], start);
+
+    // 丢掉缓存，下次读到的是服务端真实数据（带真实 id）
+    net.dropCache(`book:${op.bookId}`);
+    net.dropCache('books');
 });
 
 net.registerSyncHandler('vocab', async op => {
@@ -962,24 +1020,29 @@ export const api = {
         },
 
         async detail(id) {
-            return net.cached(`book:${id}`, async () => {
-                await requireUser();
+            return net.cached(`book:${id}`, () => fetchBookDetail(id));
+        },
 
-                const { data: book, error } = await supabase
-                    .from('wordbooks')
-                    .select('id, name, created_at')
-                    .eq('id', id)
-                    .maybeSingle();
+        // 字典里「加入生词本」用：单个词，先查重再加；离线时排队等联网补传
+        async addWord(bookId, { term, meaning }) {
+            const text = String(term || '').trim();
+            const sense = String(meaning || '').trim();
+            if (!text) fail('没有要加入的单词', 400);
 
-                if (error) fail(error.message, 500);
-                if (!book) fail('单词本不存在或已被删除', 404);
+            if (await bookHasWord(bookId, text)) return { added: false, duplicate: true };
 
-                const list = await fetchAllWords(id);
-                return {
-                    book: { id: book.id, name: book.name, created_at: book.created_at, wordCount: list.length },
-                    words: list
-                };
-            });
+            if (net.isOffline()) {
+                net.enqueue({ kind: 'words.add', bookId, words: [{ term: text, meaning: sense }] });
+                return { added: true, pending: true };
+            }
+
+            const user = await requireUser();
+            const start = await nextWordPosition(bookId);
+            const inserted = await insertWords(user.id, bookId, [{ term: text, meaning: sense }], start);
+            if (!inserted.length) fail('加入失败，请稍后重试', 500);
+
+            appendToBookCache(bookId, inserted[0]);
+            return { added: true, word: inserted[0] };
         },
 
         async create({ name, words }) {

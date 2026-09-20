@@ -1,6 +1,6 @@
 import { PAGES } from './config.js';
 import { api } from './api.js';
-import { $, $$, toast, confirmDialog, setLoading, skeletonRows } from './ui.js';
+import { $, $$, toast, confirmDialog, chooseDialog, setLoading, skeletonRows } from './ui.js';
 import { initShell } from './shell.js';
 import { extractFile, ACCEPT } from './file-extract.js';
 import { phoneticOf, loadPhonetics, phoneticsReady, speak, warmUpVoices } from './phonetic.js';
@@ -2863,6 +2863,62 @@ function renderDictResult() {
         box.appendChild(sense);
     });
     els.dictResult.appendChild(box);
+
+    // 查到的词可以顺手加进单词本；释义压成一行存，列表里看着整齐
+    const actions = document.createElement('div');
+    actions.className = 'dict-actions';
+
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'btn-ghost';
+    add.id = 'dictAddWord';
+    add.textContent = '＋ 加入生词本';
+    add.addEventListener('click', () => addDictWordToBook(add, raw, meaningLines(meaning).join('；')));
+    actions.appendChild(add);
+
+    els.dictResult.appendChild(actions);
+}
+
+// 加入生词本：每次让用户挑一本
+async function addDictWordToBook(button, term, meaning) {
+    if (!wordsState.books.length) {
+        toast('还没有单词本，先去「＋ 新建」建一个', 'info');
+        return;
+    }
+
+    const bookId = await chooseDialog({
+        title: `把「${term}」加到哪本单词本？`,
+        options: wordsState.books.map(book => ({
+            value: book.id,
+            label: book.name,
+            hint: `${book.wordCount} 个单词`
+        }))
+    });
+
+    if (!bookId) return;
+
+    const book = wordsState.books.find(item => item.id === bookId);
+    setLoading(button, true);
+
+    try {
+        const result = await api.wordbooks.addWord(bookId, { term, meaning });
+
+        if (result.duplicate) {
+            toast(`「${term}」已经在《${book ? book.name : '这个单词本'}》里了`, 'info');
+            return;
+        }
+
+        if (book) book.wordCount += 1;
+        renderBooks();
+
+        toast(result.pending
+            ? `已记下，联网后会自动加入《${book ? book.name : '单词本'}》`
+            : `已加入《${book ? book.name : '单词本'}》`, 'success');
+    } catch (err) {
+        toast(err.message, 'error');
+    } finally {
+        setLoading(button, false);
+    }
 }
 
 function speakDictWord() {

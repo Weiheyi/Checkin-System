@@ -220,6 +220,25 @@ function mergeOutbox(list, entry) {
         return;
     }
 
+    if (entry.kind === 'words.add') {
+        // 同一本单词本只留一条，并顺手把重复的词去掉（离线时判不了重，先在这里挡一道）
+        const i = findLast(op => op.kind === 'words.add' && op.bookId === entry.bookId);
+        if (i < 0) {
+            list.push(entry);
+            return;
+        }
+
+        const seen = new Set(list[i].words.map(word => word.term.trim().toLowerCase()));
+        for (const word of entry.words || []) {
+            const key = word.term.trim().toLowerCase();
+            if (seen.has(key)) continue;
+            list[i].words.push(word);
+            seen.add(key);
+        }
+        list[i].at = entry.at;
+        return;
+    }
+
     if (entry.kind === 'study') {
         // 同一轮背诵 / 考核的逐词作答并到一条里，同步时一次性建会话
         const i = findLast(op => op.kind === 'study' && op.runId === entry.runId);
