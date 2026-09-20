@@ -60,6 +60,11 @@
                     <span class="tool-name">字典</span>
                     <span class="tool-desc">离线音标与中文释义</span>
                 </button>
+                <button type="button" class="tool-card" data-tool="vocab">
+                    <span class="tool-icon">📊</span>
+                    <span class="tool-name">词汇量测试</span>
+                    <span class="tool-desc">估一估现在认识多少词</span>
+                </button>
             </div>
         </div>
 
@@ -447,6 +452,57 @@
                 音标与中文释义都来自本地内置的词库（约 6MB，第一次打开字典页时加载一次），完全离线、不联网。
                 中文词库收录约 6 万个常用词；查不到的多是生僻词或专有名词。
             </p>
+        </section>
+
+        <!-- ========== 词汇量测试 ========== -->
+        <section class="card tool-panel hidden" id="panel-vocab">
+
+            <!-- 视图：介绍 + 历史 -->
+            <div id="vocabIntro">
+                <h3 class="card-title">📊 词汇量测试</h3>
+                <p class="setting-desc">
+                    把内置词表按词频切成 20 个频段，每档随机抽几个词：先只看单词判断认不认识（这一步不给释义，
+                    不然等于送答案），再把你说「认识」的词连同释义列一遍，让你取消虚报的，最后估算词汇量。
+                </p>
+                <p class="setting-desc">
+                    结果是个估算值（会给出大概的浮动范围），题量越大范围越窄；历史记录存在云端。
+                </p>
+                <div class="setting-row">
+                    <div class="setting-label">题量</div>
+                    <div class="preset-row" id="vocabSizes"></div>
+                </div>
+                <button class="btn-primary block-btn" id="vocabStart" type="button">开始测试</button>
+                <p class="setting-desc" id="vocabIntroHint" hidden></p>
+                <div class="vocab-history" id="vocabHistory"></div>
+            </div>
+
+            <!-- 视图：答题 -->
+            <div id="vocabQuiz" hidden>
+                <div class="vocab-progress-text" id="vocabProgress">1 / 100</div>
+                <div class="vocab-progress"><span class="vocab-progress-fill" id="vocabBar"></span></div>
+                <div class="vocab-card">
+                    <div class="vocab-term" id="vocabTerm">word</div>
+                    <p class="vocab-hint">这个词你认识吗？</p>
+                </div>
+                <div class="vocab-actions">
+                    <button class="btn-primary" id="vocabKnown" type="button">认识</button>
+                    <button class="btn-ghost" id="vocabUnknown" type="button">不认识</button>
+                </div>
+                <button class="btn-ghost block-btn" id="vocabQuit" type="button">结束本次测试</button>
+            </div>
+
+            <!-- 视图：核对 -->
+            <div id="vocabCheck" hidden>
+                <h3 class="card-title">核对一下</h3>
+                <p class="setting-desc">
+                    下面是你说「认识」的词。没真认识就把勾去掉，估算会按去掉之后的算。
+                </p>
+                <div class="vocab-check-list" id="vocabCheckList"></div>
+                <button class="btn-primary block-btn" id="vocabCheckDone" type="button">查看结果</button>
+            </div>
+
+            <!-- 视图：结果（整块由 js/vocab.js 渲染） -->
+            <div id="vocabResult" hidden></div>
         </section>
     </div>
 

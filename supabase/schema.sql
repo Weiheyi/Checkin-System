@@ -123,6 +123,21 @@ create table if not exists public.study_logs (
   created_at timestamptz not null default now()
 );
 
+-- 词汇量测试：每次估算的结果
+-- bands 存各频段的抽样数与认识数，回看时能看出是哪几档答得好
+create table if not exists public.vocab_tests (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  estimate int not null default 0,
+  low int not null default 0,
+  high int not null default 0,
+  total int not null default 0,
+  known int not null default 0,
+  duration_ms int not null default 0,
+  bands jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now()
+);
+
 -- 用户反馈：个人中心「意见反馈」提交的内容
 -- 站长在 Supabase 后台的 Table Editor 里就能看到（service role 不受 RLS 限制）
 create table if not exists public.feedback (
@@ -168,6 +183,7 @@ create index if not exists words_book_pos_idx          on public.words(book_id, 
 create index if not exists study_sessions_user_idx     on public.study_sessions(user_id, created_at desc);
 create index if not exists study_logs_session_idx      on public.study_logs(session_id);
 create index if not exists study_logs_user_idx         on public.study_logs(user_id, created_at desc);
+create index if not exists vocab_tests_user_idx        on public.vocab_tests(user_id, created_at desc);
 create index if not exists feedback_user_idx          on public.feedback(user_id, created_at desc);
 
 -- ============================================================
@@ -202,6 +218,7 @@ alter table public.wordbooks     enable row level security;
 alter table public.words         enable row level security;
 alter table public.study_sessions enable row level security;
 alter table public.study_logs     enable row level security;
+alter table public.vocab_tests    enable row level security;
 alter table public.feedback       enable row level security;
 
 -- profiles：本人可读写，好友可读
@@ -256,6 +273,10 @@ create policy "study_sessions: own all" on public.study_sessions for all using (
 
 drop policy if exists "study_logs: own all" on public.study_logs;
 create policy "study_logs: own all" on public.study_logs for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- vocab_tests：词汇量测试记录，只有本人可见（不参与好友排行榜）
+drop policy if exists "vocab_tests: own all" on public.vocab_tests;
+create policy "vocab_tests: own all" on public.vocab_tests for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- feedback：本人可提交 / 查看 / 删除自己的反馈（站长在后台用 service role 看全部）
 drop policy if exists "feedback: own read"   on public.feedback;

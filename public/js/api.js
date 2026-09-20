@@ -151,6 +151,20 @@ function mapSession(row) {
     };
 }
 
+function mapVocabTest(row) {
+    return {
+        id: row.id,
+        estimate: row.estimate || 0,
+        low: row.low || 0,
+        high: row.high || 0,
+        total: row.total || 0,
+        known: row.known || 0,
+        durationMs: row.duration_ms || 0,
+        bands: Array.isArray(row.bands) ? row.bands : [],
+        createdAt: row.created_at
+    };
+}
+
 async function getTodayCheckin(userId) {
     const { data, error } = await supabase
         .from('checkins')
@@ -794,6 +808,49 @@ export const api = {
                 if (error) fail(error.message, 500);
             }
 
+            return {};
+        }
+    },
+
+    // 词汇量测试：每次估算结果都在云端留一条，便于看词汇量随时间的变化
+    vocab: {
+        async save({ estimate, low, high, total, known, durationMs, bands }) {
+            const user = await requireUser();
+            const { data, error } = await supabase
+                .from('vocab_tests')
+                .insert({
+                    user_id: user.id,
+                    estimate,
+                    low,
+                    high,
+                    total,
+                    known,
+                    duration_ms: durationMs || 0,
+                    bands: bands || []
+                })
+                .select()
+                .single();
+
+            if (error) fail(error.message, 500);
+            return mapVocabTest(data);
+        },
+
+        async list(limit = 50) {
+            await requireUser();
+            const { data, error } = await supabase
+                .from('vocab_tests')
+                .select('id, estimate, low, high, total, known, duration_ms, bands, created_at')
+                .order('created_at', { ascending: false })
+                .limit(limit);
+
+            if (error) fail(error.message, 500);
+            return (data || []).map(mapVocabTest);
+        },
+
+        async remove(id) {
+            await requireUser();
+            const { error } = await supabase.from('vocab_tests').delete().eq('id', id);
+            if (error) fail(error.message, 500);
             return {};
         }
     }
