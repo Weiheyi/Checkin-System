@@ -1683,15 +1683,14 @@ function submitTyped() {
     els.quizInput.disabled = true;
     els.quizSubmit.disabled = true;
 
-    // 填义题：自动判对就直接计入；判错先不落账，留一次手动纠正的机会
+    // 填义题：自动判对就直接计入；判错先只记下判定，留一次手动纠正的机会
     if (question.kind === 'meaning') {
         quiz.answered = true;
         if (judgeMeaning(value, question.answer, question.word.term)) {
             resolveQuizAnswer(question, true, value);
         } else {
-            quiz.pending = { question, given: value };
+            quiz.pending = { question, given: value, correct: false };
             renderAnswerFeedback(question, false);
-            els.quizOverride.hidden = false;
         }
         return;
     }
@@ -1721,12 +1720,15 @@ function renderAnswerFeedback(question, correct, timedOut = false) {
     els.quizFeedback.className = `quiz-feedback ${correct ? 'ok' : 'no'}`;
     els.quizFeedback.replaceChildren();
 
+    // 填义题自动判错后，判定由用户自己来回改；真正的记分留到「下一题」，
+    // 所以点错了随时能点回来，也不会在服务端留下记录
+    const pending = quiz.pending;
+
     const message = document.createElement('span');
-    message.textContent = correct
-        ? '答对了！'
-        : timedOut
-            ? `超时了，正确答案：${question.answer}`
-            : `答错了，正确答案：${question.answer}`;
+    if (timedOut) message.textContent = `超时了，正确答案：${question.answer}`;
+    else if (pending && pending.correct) message.textContent = '已按答对算，点「下一题」确定';
+    else if (correct) message.textContent = '答对了！';
+    else message.textContent = `答错了，正确答案：${question.answer}`;
     els.quizFeedback.appendChild(message);
 
     // 作答后才显示音标与发音，免得拼写题被直接提示答案
@@ -1741,30 +1743,32 @@ function renderAnswerFeedback(question, correct, timedOut = false) {
 
     renderQuizProgress();
 
+    els.quizOverride.hidden = !pending;
+    els.quizOverride.textContent = pending && pending.correct ? '点错了，改回算错' : '我答对了，算对';
+
     els.quizNext.hidden = false;
     els.quizNext.textContent = quiz.index + 1 >= quiz.questions.length ? '查看结果' : '下一题';
     els.quizNext.focus();
 }
 
-// 填义被自动判错后点「我答对了」：按答对重新计分（此时还没落账，改判不会重复记录）
+// 填义被自动判错后点「我答对了」：这里只翻转判定，不记分，
+// 点错了再点一次就改回去；等点「下一题」才真正落账
 function acceptQuizMeaning() {
     const pending = quiz.pending;
     if (!pending) return;
 
-    quiz.pending = null;
-    els.quizOverride.hidden = true;
-    commitQuizAnswer(pending.question, true, pending.given);
-    renderAnswerFeedback(pending.question, true);
+    pending.correct = !pending.correct;
+    renderAnswerFeedback(pending.question, pending.correct);
 }
 
 function nextQuestion() {
     if (!quiz.answered) return;
 
-    // 自动判错又没点「我答对了」，就按答错落账
+    // 填义题的判定（自动判错又被手动改过的）到这里才落账
     if (quiz.pending) {
         const pending = quiz.pending;
         quiz.pending = null;
-        commitQuizAnswer(pending.question, false, pending.given);
+        commitQuizAnswer(pending.question, !!pending.correct, pending.given);
     }
 
     quiz.index += 1;
@@ -2040,15 +2044,14 @@ function submitElimTyped() {
     els.wrongInput.disabled = true;
     els.wrongSubmit.disabled = true;
 
-    // 填义题：自动判对就直接计入；判错先不落账，留一次手动纠正的机会
+    // 填义题：自动判对就直接计入；判错先只记下判定，留一次手动纠正的机会
     if (question.kind === 'meaning') {
         elim.answered = true;
         if (judgeMeaning(value, question.answer, question.word.term)) {
             resolveElimAnswer(question, true);
         } else {
-            elim.pending = { question, given: value };
+            elim.pending = { question, given: value, correct: false };
             renderElimFeedback(question, false, false);
-            els.wrongOverride.hidden = false;
         }
         return;
     }
@@ -2084,8 +2087,12 @@ function renderElimFeedback(question, correct, eliminated) {
     els.wrongFeedback.className = `quiz-feedback ${correct ? 'ok' : 'no'}`;
     els.wrongFeedback.replaceChildren();
 
+    // 同考核：填义自动判错后判定可以来回改，记分与队列移动都留到「下一题」
+    const pending = elim.pending;
+
     const message = document.createElement('span');
-    if (!correct) message.textContent = `答错了，正确答案：${question.answer}`;
+    if (pending && pending.correct) message.textContent = '已按答对算，点「下一题」确定';
+    else if (!correct) message.textContent = `答错了，正确答案：${question.answer}`;
     else if (eliminated) message.textContent = '已消灭！';
     else message.textContent = `答对了，熟练度 ${word.mastery} / ${MASTERY_TARGET}，再连对一次就消灭`;
     els.wrongFeedback.appendChild(message);
@@ -2099,30 +2106,31 @@ function renderElimFeedback(question, correct, eliminated) {
     }
     els.wrongFeedback.appendChild(makeSpeakButton(word.term));
 
+    els.wrongOverride.hidden = !pending;
+    els.wrongOverride.textContent = pending && pending.correct ? '点错了，改回算错' : '我答对了，算对';
+
     els.wrongNext.hidden = false;
     els.wrongNext.textContent = elim.queue.length ? '下一题' : '查看结果';
     els.wrongNext.focus();
 }
 
-// 填义被自动判错后点「我答对了」：按答对重新计分（此时还没落账，改判不会重复记录）
+// 填义被自动判错后点「我答对了」：只翻转判定，点错了再点一次就改回去
 function acceptElimOverride() {
     const pending = elim.pending;
     if (!pending) return;
 
-    elim.pending = null;
-    els.wrongOverride.hidden = true;
-    const eliminated = commitElimAnswer(pending.question, true);
-    renderElimFeedback(pending.question, true, eliminated);
+    pending.correct = !pending.correct;
+    renderElimFeedback(pending.question, pending.correct);
 }
 
 function nextElim() {
     if (!elim.answered) return;
 
-    // 自动判错又没点「我答对了」，就按答错落账
+    // 判定到这里才落账（会移动队列、更新熟练度）
     if (elim.pending) {
         const pending = elim.pending;
         elim.pending = null;
-        commitElimAnswer(pending.question, false);
+        commitElimAnswer(pending.question, !!pending.correct);
     }
 
     if (!elim.queue.length) finishElim();
