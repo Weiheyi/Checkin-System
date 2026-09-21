@@ -11,12 +11,17 @@
     <link rel="manifest" href="manifest.json">
     <link rel="stylesheet" href="css/studio.css">
     <script>
-        // 与打卡站共用同一个主题 key，深浅色保持一致；避免刷新时闪一下
+        // 与打卡站共用同一个主题 key，深浅色保持一致；避免刷新时闪一下。
+        // 同一会话里已经解过锁的话，首帧就不渲染密钥门，免得先闪出门口再消失。
         (function () {
             try {
                 var t = localStorage.getItem('checkin_theme') || 'system';
                 var dark = t === 'dark' || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
                 document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+
+                if (sessionStorage.getItem('studio_unlocked') === '1') {
+                    document.documentElement.classList.add('is-remembered');
+                }
             } catch (e) {}
         })();
     </script>
@@ -112,26 +117,46 @@
                     <span class="roster-no">01</span>
                     <span class="roster-name">xxl</span>
                     <span class="roster-role">艺术总监</span>
+                    <p class="roster-desc">
+                        管「好不好看」的人。配色、字体、留白，最后都要过他这一关；
+                        对「差不多就行」过敏，看到好东西会存下来，总觉得下次用得上。
+                    </p>
                 </li>
                 <li class="roster-row">
                     <span class="roster-no">02</span>
                     <span class="roster-name">why</span>
                     <span class="roster-role">执行总监</span>
+                    <p class="roster-desc">
+                        管「什么时候做完」的人。谁在什么时候交什么，他心里有张表；
+                        催进度很客气，但从来没被糊弄过去。
+                    </p>
                 </li>
                 <li class="roster-row">
                     <span class="roster-no">03</span>
                     <span class="roster-name">qjy</span>
                     <span class="roster-role">技术指导</span>
+                    <p class="roster-desc">
+                        管「能不能跑起来」的人。从部署到一张样式表，哪里出问题都找他；
+                        习惯先说「我复现一下」，再给结论。
+                    </p>
                 </li>
                 <li class="roster-row">
                     <span class="roster-no">04</span>
                     <span class="roster-name">sgeq</span>
                     <span class="roster-role">艺术指导</span>
+                    <p class="roster-desc">
+                        管「还能不能更好」的人。挑毛病一针见血，但会给两个改法，
+                        不会只丢一句「不行」就转身走。
+                    </p>
                 </li>
                 <li class="roster-row">
                     <span class="roster-no">05</span>
                     <span class="roster-name">zph</span>
                     <span class="roster-role">品鉴总监</span>
+                    <p class="roster-desc">
+                        管「值不值得拿出来」的人。新东西做出来先过他这一关——
+                        他是第一个观众，也是最挑剔的那个。
+                    </p>
                 </li>
             </ol>
         </section>

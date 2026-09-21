@@ -58,18 +58,28 @@ body.studio {
     min-height: 100vh;
     font-family: var(--font-body);
     color: var(--ink-soft);
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.7;
+}
+
+/* 密钥门与页面铺同一层纸底：门要完全不透明，否则后面的内容会透出来 */
+body.studio,
+.gate {
     background-color: var(--paper);
     background-image:
         radial-gradient(circle at 16% 8%, var(--cinnabar-wash), transparent 40%),
         radial-gradient(circle at 86% 92%, var(--cinnabar-wash), transparent 44%);
     background-attachment: fixed;
-    -webkit-font-smoothing: antialiased;
-    line-height: 1.7;
 }
 
 /* 没解锁前锁住滚动（密钥门自己可以滚） */
 :root:not(.is-unlocked) {
     overflow: hidden;
+}
+
+/* 同一会话里已经解锁过：首帧就不渲染密钥门，避免先闪一下 */
+:root.is-remembered .gate {
+    display: none;
 }
 
 a {
@@ -144,6 +154,28 @@ a {
     display: none;
 }
 
+/* 解锁：门整体淡出、卡片向后收一点，正文随后升起 */
+.gate.is-leaving {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.34s var(--ease);
+}
+
+.gate.is-leaving .gate-card {
+    transform: scale(0.96) translateY(-8px);
+    transition: transform 0.34s var(--ease);
+}
+
+/* 只动 transform：卡片整体做淡入的话，动画途中会短暂拉低文字对比度 */
+@keyframes gate-in {
+    from {
+        transform: translateY(12px) scale(0.985);
+    }
+    to {
+        transform: none;
+    }
+}
+
 .gate-card {
     width: 100%;
     max-width: 380px;
@@ -157,6 +189,8 @@ a {
     border-radius: 18px;
     box-shadow: 0 1px 0 oklch(100% 0 0 / 0.5) inset, 0 18px 44px oklch(30% 0.06 40 / 0.14);
     text-align: center;
+    /* backwards 而不是 both：动画结束后不再占用 transform，解锁时的退场过渡才生效 */
+    animation: gate-in 0.42s var(--ease) backwards;
 }
 
 .gate-en {
@@ -548,9 +582,13 @@ a {
 
 .roster-row {
     display: grid;
-    grid-template-columns: 3.2em 1fr auto;
+    grid-template-columns: 3.2em minmax(0, 1fr) auto;
+    grid-template-areas:
+        "no   name role"
+        ".    desc desc";
     align-items: baseline;
-    gap: var(--s3);
+    column-gap: var(--s3);
+    row-gap: 6px;
     padding: var(--s3) var(--s2);
     border-bottom: 1px solid var(--line);
     border-radius: var(--radius);
@@ -563,6 +601,7 @@ a {
 }
 
 .roster-no {
+    grid-area: no;
     font-family: var(--font-mono);
     font-size: 13px;
     letter-spacing: 0.08em;
@@ -570,6 +609,7 @@ a {
 }
 
 .roster-name {
+    grid-area: name;
     font-family: var(--font-mono);
     font-size: 18px;
     font-weight: 600;
@@ -578,9 +618,20 @@ a {
 }
 
 .roster-role {
+    grid-area: role;
     font-size: 14px;
     color: var(--ink-mute);
     text-align: right;
+}
+
+.roster-desc {
+    grid-area: desc;
+    max-width: 44em;
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.75;
+    color: var(--ink-soft);
+    text-wrap: pretty;
 }
 
 /* ========== 页脚 ========== */
@@ -680,7 +731,7 @@ a {
     }
 
     .roster-row {
-        grid-template-columns: 2.6em 1fr auto;
+        grid-template-columns: 2.6em minmax(0, 1fr) auto;
         gap: var(--s2);
     }
 

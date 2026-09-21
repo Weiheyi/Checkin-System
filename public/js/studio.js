@@ -33,9 +33,10 @@ function remember() {
     }
 }
 
-function unlock({ moveFocus = true } = {}) {
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+function unlock({ moveFocus = true, animate = true } = {}) {
     remember();
-    gate.hidden = true;
     page.removeAttribute('inert');
     page.removeAttribute('aria-hidden');
     root.classList.add('is-unlocked');
@@ -47,6 +48,19 @@ function unlock({ moveFocus = true } = {}) {
             heading.setAttribute('tabindex', '-1');
             heading.focus({ preventScroll: true });
         }
+    }
+
+    // 门淡出后再从布局里摘掉，这一下就是「进门」的过渡
+    const removeGate = () => {
+        gate.hidden = true;
+        gate.classList.remove('is-leaving');
+    };
+
+    if (!animate || reduceMotion.matches) {
+        removeGate();
+    } else {
+        gate.classList.add('is-leaving');
+        setTimeout(removeGate, 360);
     }
 }
 
@@ -89,7 +103,7 @@ toggleBtn.addEventListener('click', () => {
 });
 
 if (remembered()) {
-    unlock({ moveFocus: false });
+    unlock({ moveFocus: false, animate: false });
 } else {
     requestAnimationFrame(() => input.focus());
 }
