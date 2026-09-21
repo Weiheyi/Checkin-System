@@ -1407,6 +1407,110 @@ button {
     margin-bottom: var(--space-3);
 }
 
+/* ========== 词条报错 ========== */
+/* 报错弹窗内容比确认弹窗多，小屏上要能滚 */
+.report-box {
+    max-height: calc(100vh - 2 * var(--space-4));
+    overflow-y: auto;
+}
+
+/* 把当前词条原样列出来，免得报到别的词上 */
+.report-quote {
+    padding: 10px 12px;
+    margin-bottom: var(--space-3);
+    background: var(--bg);
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    overflow-wrap: break-word;
+}
+
+.report-quote-term {
+    font-weight: 600;
+    color: var(--text-strong);
+}
+
+.report-quote-meaning {
+    margin-top: 2px;
+    color: var(--text-muted);
+}
+
+.report-reasons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    margin-bottom: var(--space-3);
+}
+
+.report-reasons .preset-chip {
+    padding: 6px 12px;
+    font-size: 12px;
+}
+
+.report-note {
+    width: 100%;
+    min-height: 64px;
+    padding: 8px 10px;
+    margin-bottom: var(--space-3);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.6;
+    resize: vertical;
+}
+
+.report-note:focus {
+    outline: none;
+    border-color: var(--color-primary);
+}
+
+/* 背诵卡片翻开释义后的报错入口 */
+.study-report {
+    margin-top: var(--space-2);
+    text-align: center;
+}
+
+/* 答题反馈区里的报错入口：跟着反馈文字走，不抢「下一题」的位置 */
+.report-link {
+    display: block;
+    width: fit-content;
+    margin: var(--space-2) auto 0;
+    padding: 0;
+    background: none;
+    border: none;
+    color: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: underline;
+    opacity: 0.75;
+    cursor: pointer;
+}
+
+.report-link:hover {
+    opacity: 1;
+}
+
+/* 单词列表行里的报错，与「删除」一样平时半透明、hover 才显形 */
+.report-btn {
+    padding: 6px 10px;
+    margin-left: var(--space-2);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    color: var(--text-muted);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity var(--transition), border-color var(--transition), color var(--transition);
+}
+
+.report-btn:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
 /* ========== 图片裁剪 ========== */
 .crop-box {
     max-width: 440px;
@@ -2033,8 +2137,10 @@ button {
 
 .book-item:hover .delete-btn,
 .word-item:hover .delete-btn,
+.word-item:hover .report-btn,
 .book-item:focus-within .delete-btn,
-.word-item:focus-within .delete-btn {
+.word-item:focus-within .delete-btn,
+.word-item:focus-within .report-btn {
     opacity: 1;
 }
 
@@ -3055,9 +3161,10 @@ button {
     }
 }
 
-/* 触摸设备：删除按钮始终可见 */
+/* 触摸设备：删除与报错按钮始终可见，否则没有 hover 就点不到 */
 @media (hover: none) {
-    .delete-btn {
+    .delete-btn,
+    .report-btn {
         opacity: 1;
     }
 }

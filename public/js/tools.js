@@ -1,6 +1,6 @@
 import { PAGES } from './config.js';
 import { api } from './api.js';
-import { $, $$, toast, confirmDialog, chooseDialog, setLoading, skeletonRows } from './ui.js';
+import { $, $$, toast, confirmDialog, chooseDialog, reportDialog, setLoading, skeletonRows } from './ui.js';
 import { initShell } from './shell.js';
 import { extractFile, ACCEPT } from './file-extract.js';
 import { phoneticOf, loadPhonetics, phoneticsReady, speak, warmUpVoices } from './phonetic.js';
@@ -551,8 +551,11 @@ const quiz = {
 const STATUS_LABELS = { known: '认识', vague: '模糊', again: '不认识', new: '未背' };
 const FILTER_LABELS = { all: '全部', wrong: '错词', new: '未背', known: '认识', vague: '模糊', again: '不认识' };
 
-// mastery 记录的是「连续答对（认识）次数」，答错一次清零。
-// 连续答对 2 次就记为已掌握；原来要求 3 次，配上上千词的词库几乎永远到不了 0 之外的数字。
+// mastery 就是熟练度，答错一次清零，到 MASTERY_TARGET 即记为「已掌握」。
+// 两条路进来：背诵点「认识」+1（自评，要连对 2 次）；考核（含消灭错词）答对一次
+// 就 +MASTERY_TARGET，也就是答对即掌握 —— 考核是真正的检验，不该和自我感觉一个价。
+// （原来两边都 +1，考核全对一轮只有 1，统计上永远是 0。）
+// 改这个数要同步改 supabase/schema.sql 里 record_word_review 的 +2。
 const MASTERY_TARGET = 2;
 
 function wordStatus(word) {
@@ -564,13 +567,13 @@ function hasWrong(word) {
     return word.wrong_count > 0;
 }
 
-// 待消灭的错词：答错过、且还没「消灭」（达到连续答对 MASTERY_TARGET 次）。
+// 待消灭的错词：答错过、且还没达到「已掌握」。
 // 判定完全复用现有熟练度，不需要新增数据库字段。
 function isWrongWord(word) {
     return hasWrong(word) && word.mastery < MASTERY_TARGET;
 }
 
-// 已消灭的错词：答错过，但已经连续答对到掌握。列表里照样显示，只是标记出来
+// 已消灭的错词：答错过，但已经掌握。列表里照样显示，只是标记出来
 function isClearedWrong(word) {
     return hasWrong(word) && word.mastery >= MASTERY_TARGET;
 }
@@ -646,7 +649,7 @@ function renderDetailStats() {
     const stats = computeStats(wordsState.words);
     els.detailStats.replaceChildren(
         statItem('📚', stats.total, '单词总数'),
-        statItem('✅', stats.mastered, '已掌握', `连续答对 ${MASTERY_TARGET} 次即视为掌握`),
+        statItem('✅', stats.mastered, '已掌握', `考核（含灭错）答对一次即掌握；背诵点「认识」要连对 ${MASTERY_TARGET} 次`),
         statItem('🎯', `${stats.rate}%`, '正确率')
     );
     updateWrongTabLabel();
@@ -902,6 +905,18 @@ function renderWordList() {
         badge.className = `status-badge status-${status}`;
         badge.textContent = STATUS_LABELS[status];
 
+        const report = document.createElement('button');
+        report.type = 'button';
+        report.className = 'report-btn';
+        report.textContent = '报错';
+        report.setAttribute('aria-label', `报告单词 ${word.term} 的释义问题`);
+        report.addEventListener('click', () => reportWord({
+            word,
+            term: word.term,
+            meaning: word.meaning,
+            source: 'list'
+        }));
+
         const del = document.createElement('button');
         del.type = 'button';
         del.className = 'delete-btn word-delete';
@@ -917,7 +932,7 @@ function renderWordList() {
             cleared.textContent = '已消灭';
             li.appendChild(cleared);
         }
-        li.appendChild(del);
+        li.append(report, del);
         fragment.appendChild(li);
     });
 
@@ -1223,6 +1238,45 @@ function makeSpeakButton(text) {
     return btn;
 }
 
+/* ---------------- 词条报错 ---------------- */
+
+// 当前打开的单词本；字典查词不属于任何本子，调用方显式传 bookId: null
+function currentBookId() {
+    return wordsState.current ? wordsState.current.id : null;
+}
+
+// 释义来自导入的原文与内置词典，中英切分难免出错，让用户能直接标出来。
+// 只提交不读回，站长在 Supabase 后台的 word_reports 表里统一核对
+async function reportWord({ word, term, meaning, source, bookId = currentBookId() }) {
+    const result = await reportDialog({ term, meaning });
+    if (!result) return;
+
+    try {
+        await api.wordReports.create({
+            wordId: word ? word.id : null,
+            bookId,
+            term,
+            meaning,
+            reason: result.reason,
+            note: result.note,
+            source
+        });
+        toast('已报错，谢谢你帮忙核对', 'success');
+    } catch (err) {
+        toast(err.message, 'error');
+    }
+}
+
+// 答题反馈区里的小号报错入口
+function makeReportLink(entry) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'report-link';
+    btn.textContent = '⚠️ 这个释义有问题？报错';
+    btn.addEventListener('click', () => reportWord(entry));
+    return btn;
+}
+
 /* ---------------- 背诵 ---------------- */
 
 function startStudy() {
@@ -1231,6 +1285,7 @@ function startStudy() {
         els.studyProgress.textContent = '';
         els.studyCard.hidden = true;
         els.studyActions.hidden = true;
+        els.studyReportRow.hidden = true;
         els.studySummary.hidden = false;
         renderSummary(els.studySummary, [], '这个本子还没有单词');
         return;
@@ -1265,6 +1320,7 @@ function renderStudy() {
     els.studyMeaning.hidden = true;
     els.studyTip.hidden = false;
     els.studyActions.hidden = true;
+    els.studyReportRow.hidden = true;
     els.studyProgress.textContent = `${study.index + 1} / ${study.queue.length}`;
     els.studyCard.classList.remove('revealed');
 
@@ -1279,6 +1335,7 @@ function revealStudy() {
     els.studyMeaning.hidden = false;
     els.studyTip.hidden = true;
     els.studyActions.hidden = false;
+    els.studyReportRow.hidden = false;
     els.studyCard.classList.add('revealed');
 }
 
@@ -1308,6 +1365,7 @@ function finishStudy() {
     const total = study.queue.length;
     els.studyCard.hidden = true;
     els.studyActions.hidden = true;
+    els.studyReportRow.hidden = true;
     els.studyProgress.textContent = total ? `${total} / ${total}` : '';
     els.studySummary.hidden = false;
     renderSummary(els.studySummary, [
@@ -1740,6 +1798,12 @@ function renderAnswerFeedback(question, correct, timedOut = false) {
         els.quizFeedback.appendChild(phonetic);
     }
     els.quizFeedback.appendChild(makeSpeakButton(question.word.term));
+    els.quizFeedback.appendChild(makeReportLink({
+        word: question.word,
+        term: question.word.term,
+        meaning: question.word.meaning,
+        source: 'quiz'
+    }));
 
     renderQuizProgress();
 
@@ -1840,8 +1904,8 @@ function finishQuiz() {
 
 /* ---------------- 消灭错词 ---------------- */
 
-// 错词 = 答错过、且还没连续答对 MASTERY_TARGET 次的词（复用「已掌握」的判定）。
-// 灭错就是反复练这些词：答对一次熟练度 +1，达标即从错词池消失；答错清零并排回队尾。
+// 错词 = 答错过、且还没达到「已掌握」的词（复用同一套判定）。
+// 灭错就是反复练这些词：答对一次即掌握、从错词池消失；答错清零并排回队尾。
 const elim = {
     type: 'choice',
     queue: [],
@@ -1900,7 +1964,7 @@ function refreshWrongStats() {
     const { pending, cleared, misses } = wrongWordStats();
 
     els.wrongStats.replaceChildren(
-        statItem('🎯', pending.length, '待消灭', `答错过、还没连续答对 ${MASTERY_TARGET} 次的单词`),
+        statItem('🎯', pending.length, '待消灭', `答错过、还没达到「已掌握」的单词（答对一次即消灭）`),
         statItem('✅', cleared, '已消灭'),
         statItem('📉', misses, '累计答错')
     );
@@ -1919,7 +1983,7 @@ function refreshWrongStats() {
         els.wrongHint.textContent = '待消灭的错词都没有释义，补上释义后就能出题了。';
         els.wrongStart.disabled = true;
     } else {
-        const notes = [`共 ${drillable} 个待消灭的错词，连续答对 ${MASTERY_TARGET} 次即消灭。`];
+        const notes = [`共 ${drillable} 个待消灭的错词，答对一次即消灭；答错清零并排到队尾继续练。`];
         if (missing) notes.push(`另有 ${missing} 个错词没有释义，已跳过。`);
         if (elim.type === 'choice' && usableWords().length < 4) {
             notes.push('带释义的单词不足 4 个，请改用「拼写」。');
@@ -2051,7 +2115,7 @@ function submitElimTyped() {
             resolveElimAnswer(question, true);
         } else {
             elim.pending = { question, given: value, correct: false };
-            renderElimFeedback(question, false, false);
+            renderElimFeedback(question, false);
         }
         return;
     }
@@ -2061,26 +2125,25 @@ function submitElimTyped() {
 }
 
 function resolveElimAnswer(question, correct) {
-    const eliminated = commitElimAnswer(question, correct);
-    renderElimFeedback(question, correct, eliminated);
+    commitElimAnswer(question, correct);
+    renderElimFeedback(question, correct);
 }
 
-// 记一次作答并移动队列；返回这个词本轮是否已被消灭
+// 记一次作答并移动队列。答对就 +MASTERY_TARGET，必然达到掌握线，所以答对即消灭；
+// 答错清零并排到队尾继续练
 function commitElimAnswer(question, correct) {
     const word = question.word;
     applyElimResult(word, correct);
 
-    // 答对并达到「连续答对」门槛才算消灭，否则排到队尾继续练
     const eliminated = correct && word.mastery >= MASTERY_TARGET;
     elim.queue.shift();
     if (!eliminated) elim.queue.push(word);
 
     renderElimProgress();
     refreshWrongStats();
-    return eliminated;
 }
 
-function renderElimFeedback(question, correct, eliminated) {
+function renderElimFeedback(question, correct) {
     const word = question.word;
 
     els.wrongFeedback.hidden = false;
@@ -2093,8 +2156,7 @@ function renderElimFeedback(question, correct, eliminated) {
     const message = document.createElement('span');
     if (pending && pending.correct) message.textContent = '已按答对算，点「下一题」确定';
     else if (!correct) message.textContent = `答错了，正确答案：${question.answer}`;
-    else if (eliminated) message.textContent = '已消灭！';
-    else message.textContent = `答对了，熟练度 ${word.mastery} / ${MASTERY_TARGET}，再连对一次就消灭`;
+    else message.textContent = '答对了，已消灭！';
     els.wrongFeedback.appendChild(message);
 
     const ipa = phoneticOf(word.term);
@@ -2105,6 +2167,12 @@ function renderElimFeedback(question, correct, eliminated) {
         els.wrongFeedback.appendChild(phonetic);
     }
     els.wrongFeedback.appendChild(makeSpeakButton(word.term));
+    els.wrongFeedback.appendChild(makeReportLink({
+        word,
+        term: word.term,
+        meaning: word.meaning,
+        source: 'elim'
+    }));
 
     els.wrongOverride.hidden = !pending;
     els.wrongOverride.textContent = pending && pending.correct ? '点错了，改回算错' : '我答对了，算对';
@@ -2186,7 +2254,7 @@ function applyElimResult(word, correct) {
     word.review_count += 1;
     if (correct) {
         word.correct_count += 1;
-        word.mastery = Math.min(5, word.mastery + 1);
+        word.mastery = Math.min(5, word.mastery + MASTERY_TARGET);
         word.last_result = 'known';
     } else {
         word.wrong_count += 1;
@@ -2258,7 +2326,7 @@ function applyQuizResult(word, correct) {
     word.review_count += 1;
     if (correct) {
         word.correct_count += 1;
-        word.mastery = Math.min(5, word.mastery + 1);
+        word.mastery = Math.min(5, word.mastery + MASTERY_TARGET);
         word.last_result = 'known';
     } else {
         word.wrong_count += 1;
@@ -2876,6 +2944,20 @@ function renderDictResult() {
     add.addEventListener('click', () => addDictWordToBook(add, raw, meaningLines(meaning).join('；')));
     actions.appendChild(add);
 
+    // 查到的释义来自内置词典，不属于任何单词本
+    const report = document.createElement('button');
+    report.type = 'button';
+    report.className = 'btn-ghost';
+    report.textContent = '⚠️ 报错';
+    report.addEventListener('click', () => reportWord({
+        word: null,
+        bookId: null,
+        term: raw,
+        meaning: meaningLines(meaning).join('；'),
+        source: 'dict'
+    }));
+    actions.appendChild(report);
+
     els.dictResult.appendChild(actions);
 }
 
@@ -3126,6 +3208,8 @@ function cacheElements() {
     els.studyAutoSpeak = $('#studyAutoSpeak');
     els.studyPhonetic = $('#studyPhonetic');
     els.studySpeak = $('#studySpeak');
+    els.studyReportRow = $('#studyReportRow');
+    els.studyReport = $('#studyReport');
 
     els.quizView = $('#quizView');
     els.quizSetup = $('#quizSetup');
@@ -3324,6 +3408,11 @@ function bindEvents() {
         if (!els.studyAutoSpeak.checked) return;
         const word = currentStudyWord();
         if (word) speak(word.term);
+    });
+
+    els.studyReport.addEventListener('click', () => {
+        const word = currentStudyWord();
+        if (word) reportWord({ word, term: word.term, meaning: word.meaning, source: 'study' });
     });
 
     // 考核

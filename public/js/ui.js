@@ -268,6 +268,114 @@ export function chooseDialog({ title = '请选择', message = '', options = [], 
     });
 }
 
+/* ---------------- 词条报错 ---------------- */
+
+// 原因按遇到的多寡排，第一条默认选中，多数时候点一下「提交报错」就够了
+const REPORT_REASONS = [
+    '释义不对（意思对不上）',
+    '中英切分错了（单词和释义串行）',
+    '释义缺失或不完整',
+    '单词本身拼写有误',
+    '其他问题'
+];
+
+// 词条报错：先把当前单词与释义原样列出来（免得报到别的词上），
+// 再让用户选一个原因、可选补一句说明。取消 / Esc 返回 null
+export function reportDialog({ term = '', meaning = '' } = {}) {
+    return new Promise(resolve => {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+
+        const box = document.createElement('div');
+        box.className = 'modal-box report-box';
+        box.setAttribute('role', 'dialog');
+        box.setAttribute('aria-modal', 'true');
+
+        const heading = document.createElement('h4');
+        heading.className = 'modal-title';
+        heading.textContent = '⚠️ 报错';
+
+        const text = document.createElement('p');
+        text.className = 'modal-text tight';
+        text.textContent = '这个单词或释义有问题？选一个原因提交，我会去核对。';
+
+        const quote = document.createElement('div');
+        quote.className = 'report-quote';
+
+        const quoteTerm = document.createElement('div');
+        quoteTerm.className = 'report-quote-term';
+        quoteTerm.textContent = term || '（没有单词）';
+
+        const quoteMeaning = document.createElement('div');
+        quoteMeaning.className = 'report-quote-meaning';
+        quoteMeaning.textContent = meaning || '（没有释义）';
+
+        quote.append(quoteTerm, quoteMeaning);
+
+        let reason = REPORT_REASONS[0];
+
+        const chips = document.createElement('div');
+        chips.className = 'report-reasons';
+
+        REPORT_REASONS.forEach((label, index) => {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = `preset-chip${index === 0 ? ' active' : ''}`;
+            chip.textContent = label;
+            chip.addEventListener('click', () => {
+                reason = label;
+                [...chips.children].forEach(item => item.classList.toggle('active', item === chip));
+            });
+            chips.appendChild(chip);
+        });
+
+        const note = document.createElement('textarea');
+        note.className = 'report-note';
+        note.maxLength = 500;
+        note.placeholder = '补充说明（可不填）：正确释义、错在哪里…';
+        note.setAttribute('aria-label', '补充说明');
+
+        const actions = document.createElement('div');
+        actions.className = 'modal-actions';
+
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.className = 'btn-ghost';
+        cancel.textContent = '取消';
+
+        const ok = document.createElement('button');
+        ok.type = 'button';
+        ok.className = 'btn-primary';
+        ok.textContent = '提交报错';
+
+        actions.append(cancel, ok);
+        box.append(heading, text, quote, chips, note, actions);
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+
+        function close(result) {
+            overlay.classList.remove('show');
+            document.removeEventListener('keydown', onKey);
+            setTimeout(() => overlay.remove(), 180);
+            resolve(result);
+        }
+
+        function onKey(event) {
+            if (event.key === 'Escape') close(null);
+        }
+
+        cancel.addEventListener('click', () => close(null));
+        ok.addEventListener('click', () => close({ reason, note: note.value.trim() }));
+        overlay.addEventListener('click', event => {
+            if (event.target === overlay) close(null);
+        });
+        document.addEventListener('keydown', onKey);
+
+        requestAnimationFrame(() => overlay.classList.add('show'));
+        ok.focus();
+    });
+}
+
 /* ---------------- 使用说明提醒 ---------------- */
 
 const GUIDE_TIP_KEY = 'checkin_guide_tip_off';

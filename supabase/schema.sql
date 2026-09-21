@@ -148,6 +148,24 @@ create table if not exists public.feedback (
   created_at timestamptz not null default now()
 );
 
+-- 词条报错：背单词 / 考核 / 字典 里发现释义不对时提交
+-- 释义来自导入的原文与内置词典，中英切分难免出错，用户可以直接标记出来
+-- 站长同样在 Supabase 后台的 Table Editor 里查看处理
+create table if not exists public.word_reports (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  -- 报错针对的单词；字典查词、已删除的词没有对应行，留空
+  word_id uuid references public.words(id) on delete set null,
+  book_id uuid references public.wordbooks(id) on delete set null,
+  term text not null default '',
+  meaning text not null default '',
+  reason text not null default '',
+  note text not null default '',
+  -- 报错发生在哪：study / quiz / elim / list / dict
+  source text not null default '',
+  created_at timestamptz not null default now()
+);
+
 -- ============================================================
 -- 二、好友与点赞
 -- ============================================================
@@ -220,6 +238,7 @@ alter table public.study_sessions enable row level security;
 alter table public.study_logs     enable row level security;
 alter table public.vocab_tests    enable row level security;
 alter table public.feedback       enable row level security;
+alter table public.word_reports   enable row level security;
 
 -- profiles：本人可读写，好友可读
 drop policy if exists "profiles: own"          on public.profiles;
@@ -285,6 +304,14 @@ drop policy if exists "feedback: own delete" on public.feedback;
 create policy "feedback: own read"   on public.feedback for select using (auth.uid() = user_id);
 create policy "feedback: own insert" on public.feedback for insert with check (auth.uid() = user_id);
 create policy "feedback: own delete" on public.feedback for delete using (auth.uid() = user_id);
+
+-- word_reports：同上，只能写 / 看 / 删自己的报错记录
+drop policy if exists "word_reports: own read"   on public.word_reports;
+drop policy if exists "word_reports: own insert" on public.word_reports;
+drop policy if exists "word_reports: own delete" on public.word_reports;
+create policy "word_reports: own read"   on public.word_reports for select using (auth.uid() = user_id);
+create policy "word_reports: own insert" on public.word_reports for insert with check (auth.uid() = user_id);
+create policy "word_reports: own delete" on public.word_reports for delete using (auth.uid() = user_id);
 
 -- ============================================================
 -- 四、触发器
@@ -489,6 +516,7 @@ begin
 end; $$;
 
 -- 记录一次背诵 / 考核结果：更新单词进度 + 写逐词明细 + 累加会话统计
+-- 熟练度：背诵答对 +1（自评），考核答对 +2 —— 0 → 2 即「已掌握」，所以考核答对一次就掌握
 -- 返回整行而不是 returns table，避免输出参数名与 words 的列名重名，
 -- 否则 `set review_count = review_count + 1` 在 PL/pgSQL 里会因「列引用有歧义」而报错
 create or replace function public.record_word_review(
@@ -500,16 +528,25 @@ language plpgsql security definer set search_path = public as $$
 declare
   me uuid := auth.uid();
   rec public.words;
+  -- 这一答是不是「考核」（含「消灭错词」，两者都以 mode = 'quiz' 建会话）
+  exam boolean := false;
 begin
   if me is null then raise exception '请先登录'; end if;
   if p_result not in ('known','vague','again') then raise exception '无效的背诵结果'; end if;
+
+  -- 考核答对一次就直接算掌握：考核是真正的检验，不像背诵那样只是自评。
+  -- 会话不存在（会话没建起来）时无从判断，退回背诵的规则
+  select coalesce(bool_or(s.mode = 'quiz'), false) into exam
+    from public.study_sessions s
+   where s.id = p_session_id and s.user_id = me;
 
   update public.words
      set review_count     = review_count + 1,
          correct_count    = correct_count + case when p_result = 'known' then 1 else 0 end,
          wrong_count      = wrong_count   + case when p_result = 'again' then 1 else 0 end,
+         -- +2 是和前端 MASTERY_TARGET 对齐的：0 → 2 即达到「已掌握」（前端改门槛时这里要一起改）
          mastery          = case p_result
-                              when 'known' then least(5, mastery + 1)
+                              when 'known' then least(5, mastery + case when exam then 2 else 1 end)
                               when 'again' then 0
                               else mastery
                             end,

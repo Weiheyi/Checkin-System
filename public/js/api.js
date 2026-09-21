@@ -887,6 +887,30 @@ export const api = {
         }
     },
 
+    wordReports: {
+        // 词条报错：只提交，站长在 Supabase 后台看
+        async create({ wordId, bookId, term, meaning, reason, note, source }) {
+            const user = await requireUser();
+
+            const text = String(reason || '').trim();
+            if (!text) fail('请先选择报错原因', 400);
+
+            const { error } = await supabase.from('word_reports').insert({
+                user_id: user.id,
+                word_id: wordId || null,
+                book_id: bookId || null,
+                term: String(term || '').trim().slice(0, 500),
+                meaning: String(meaning || '').trim().slice(0, 500),
+                reason: text.slice(0, 100),
+                note: String(note || '').trim().slice(0, 500),
+                source: String(source || '').trim().slice(0, 20)
+            });
+
+            if (error) fail(error.message, 500);
+            return {};
+        }
+    },
+
     tasks: {
         async add(content) {
             if (net.isOffline()) {
@@ -1356,6 +1380,7 @@ const ONLINE_ONLY = {
     'likes.toggle': '点赞',
     'feedback.create': '提交反馈',
     'feedback.remove': '删除反馈',
+    'wordReports.create': '提交报错',
     'wordbooks.create': '新建单词本',
     'wordbooks.addWords': '追加单词',
     'wordbooks.rename': '重命名单词本',
