@@ -21,6 +21,8 @@ const PAGES = [
     'tools.html',
     'record.html',
     'friends.html',
+    'community.html',
+    'post.html',
     'profile.html',
     'guide.html',
     'studio.html'

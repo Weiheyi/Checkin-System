@@ -11,6 +11,7 @@ const NAV = [
     { key: 'dashboard', label: '打卡', icon: '📅', href: PAGES.dashboard },
     { key: 'tools', label: '工具', icon: '🧰', href: PAGES.tools },
     { key: 'friends', label: '好友', icon: '👥', href: PAGES.friends },
+    { key: 'community', label: '论坛', icon: '💬', href: PAGES.community },
     { key: 'profile', label: '我的', icon: '🙂', href: PAGES.profile },
     { key: 'guide', label: '说明', icon: '💡', href: PAGES.guide }
 ];

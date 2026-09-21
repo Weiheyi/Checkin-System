@@ -197,6 +197,28 @@ create table if not exists public.checkin_comments (
   created_at timestamptz not null default now()
 );
 
+-- 论坛帖子：任何登录用户可见；标题必填；图片最多 3 张（存 URL 数组）
+create table if not exists public.forum_posts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  title text not null check (char_length(title) between 1 and 120),
+  content text not null default '' check (char_length(content) <= 5000),
+  images text[] not null default '{}' check (array_length(images, 1) is null or array_length(images, 1) <= 3),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- 论坛帖子评论：文字与图片至少填一样；图片最多 3 张
+create table if not exists public.forum_comments (
+  id uuid primary key default gen_random_uuid(),
+  post_id uuid not null references public.forum_posts(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  content text not null default '' check (char_length(content) <= 2000),
+  images text[] not null default '{}' check (array_length(images, 1) is null or array_length(images, 1) <= 3),
+  created_at timestamptz not null default now(),
+  check (char_length(content) > 0 or array_length(images, 1) > 0)
+);
+
 -- 私信：好友之间一对一收发，read_at 为空表示对方还没读
 create table if not exists public.messages (
   id uuid primary key default gen_random_uuid(),
@@ -228,6 +250,10 @@ create index if not exists study_logs_user_idx         on public.study_logs(user
 create index if not exists study_logs_word_idx         on public.study_logs(word_id);
 create index if not exists vocab_tests_user_idx        on public.vocab_tests(user_id, created_at desc);
 create index if not exists feedback_user_idx          on public.feedback(user_id, created_at desc);
+create index if not exists forum_posts_created_idx    on public.forum_posts(created_at desc);
+create index if not exists forum_posts_user_idx       on public.forum_posts(user_id);
+create index if not exists forum_comments_post_idx    on public.forum_comments(post_id, created_at);
+create index if not exists forum_comments_user_idx    on public.forum_comments(user_id);
 
 -- ============================================================
 -- 三、行级安全（RLS）：本人可读写，好友可读
@@ -266,6 +292,8 @@ alter table public.study_logs     enable row level security;
 alter table public.vocab_tests    enable row level security;
 alter table public.feedback       enable row level security;
 alter table public.word_reports   enable row level security;
+alter table public.forum_posts    enable row level security;
+alter table public.forum_comments enable row level security;
 
 -- profiles：本人可读写，好友可读
 drop policy if exists "profiles: own"          on public.profiles;
@@ -313,6 +341,24 @@ drop policy if exists "comments: delete own"   on public.checkin_comments;
 create policy "comments: read visible" on public.checkin_comments for select using (public.can_view_checkin(checkin_id));
 create policy "comments: insert own"   on public.checkin_comments for insert with check (auth.uid() = user_id and public.can_view_checkin(checkin_id));
 create policy "comments: delete own"   on public.checkin_comments for delete using (auth.uid() = user_id);
+
+-- forum_posts：任何登录用户都能读；只能建 / 改 / 删自己的（to authenticated 闭掉匿名访问）
+drop policy if exists "posts: read all"   on public.forum_posts;
+drop policy if exists "posts: insert own" on public.forum_posts;
+drop policy if exists "posts: update own" on public.forum_posts;
+drop policy if exists "posts: delete own" on public.forum_posts;
+create policy "posts: read all"   on public.forum_posts for select to authenticated using (true);
+create policy "posts: insert own" on public.forum_posts for insert to authenticated with check (auth.uid() = user_id);
+create policy "posts: update own" on public.forum_posts for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "posts: delete own" on public.forum_posts for delete to authenticated using (auth.uid() = user_id);
+
+-- forum_comments：任何登录用户都能读；只能建 / 删自己的
+drop policy if exists "post_comments: read all"   on public.forum_comments;
+drop policy if exists "post_comments: insert own" on public.forum_comments;
+drop policy if exists "post_comments: delete own" on public.forum_comments;
+create policy "post_comments: read all"   on public.forum_comments for select to authenticated using (true);
+create policy "post_comments: insert own" on public.forum_comments for insert to authenticated with check (auth.uid() = user_id);
+create policy "post_comments: delete own" on public.forum_comments for delete to authenticated using (auth.uid() = user_id);
 
 -- messages：本人收发的可见；只能发给好友；收件人可标记已读；自己参与的会话可删
 drop policy if exists "messages: read own"           on public.messages;
@@ -402,6 +448,11 @@ create trigger wordbooks_touch
 drop trigger if exists study_sessions_touch on public.study_sessions;
 create trigger study_sessions_touch
   before update on public.study_sessions
+  for each row execute function public.touch_updated_at();
+
+drop trigger if exists forum_posts_touch on public.forum_posts;
+create trigger forum_posts_touch
+  before update on public.forum_posts
   for each row execute function public.touch_updated_at();
 
 -- ============================================================
@@ -576,6 +627,57 @@ language sql security definer stable set search_path = public as $$
   where cc.checkin_id = p_checkin
     and public.can_view_checkin(p_checkin)
   order by cc.created_at asc;
+$$;
+
+-- 论坛帖子列表（带作者昵称/头像与评论数）。
+-- 同 checkin_comments_of：profiles 主键指向 auth.users，PostgREST 不能 embed，
+-- 且 profiles 的 RLS 只允许本人/好友读，公开论坛里要显示任意作者只能走 security definer。
+drop function if exists public.forum_posts_list(int, int);
+create or replace function public.forum_posts_list(p_limit int default 20, p_offset int default 0)
+returns table (
+  id uuid, user_id uuid, nickname text, avatar_emoji text, avatar_url text,
+  title text, content text, images text[], created_at timestamptz,
+  comment_count int, mine boolean
+)
+language sql security definer stable set search_path = public as $$
+  select fp.id, fp.user_id, coalesce(nullif(p.nickname, ''), '用户'), p.avatar_emoji, p.avatar_url,
+         fp.title, fp.content, fp.images, fp.created_at,
+         (select count(*)::int from public.forum_comments fc where fc.post_id = fp.id),
+         (fp.user_id = auth.uid())
+  from public.forum_posts fp
+  left join public.profiles p on p.id = fp.user_id
+  order by fp.created_at desc
+  limit p_limit offset p_offset;
+$$;
+
+-- 单条帖子详情（带作者信息）
+drop function if exists public.forum_post_detail(uuid);
+create or replace function public.forum_post_detail(p_post uuid)
+returns table (
+  id uuid, user_id uuid, nickname text, avatar_emoji text, avatar_url text,
+  title text, content text, images text[], created_at timestamptz, mine boolean
+)
+language sql security definer stable set search_path = public as $$
+  select fp.id, fp.user_id, coalesce(nullif(p.nickname, ''), '用户'), p.avatar_emoji, p.avatar_url,
+         fp.title, fp.content, fp.images, fp.created_at, (fp.user_id = auth.uid())
+  from public.forum_posts fp
+  left join public.profiles p on p.id = fp.user_id
+  where fp.id = p_post;
+$$;
+
+-- 某帖的评论列表（带昵称/头像）
+create or replace function public.forum_comments_of(p_post uuid)
+returns table (
+  id uuid, user_id uuid, nickname text, avatar_emoji text, avatar_url text,
+  content text, images text[], created_at timestamptz, mine boolean
+)
+language sql security definer stable set search_path = public as $$
+  select fc.id, fc.user_id, coalesce(nullif(p.nickname, ''), '用户'), p.avatar_emoji, p.avatar_url,
+         fc.content, fc.images, fc.created_at, (fc.user_id = auth.uid())
+  from public.forum_comments fc
+  left join public.profiles p on p.id = fc.user_id
+  where fc.post_id = p_post
+  order by fc.created_at asc;
 $$;
 
 -- 个人统计一次拿全（替代原来的 4 次 count 请求）
@@ -786,6 +888,9 @@ revoke all on function public.start_study_session(text, uuid, text, int) from pu
 revoke all on function public.record_word_review(uuid, uuid, text)       from public, anon;
 revoke all on function public.auto_checkin_if_learned(date, timestamptz, int) from public, anon;
 revoke all on function public.update_word(uuid, text, text)              from public, anon;
+revoke all on function public.forum_posts_list(int, int)                 from public, anon;
+revoke all on function public.forum_post_detail(uuid)                    from public, anon;
+revoke all on function public.forum_comments_of(uuid)                    from public, anon;
 
 grant execute on function public.are_friends(uuid, uuid)   to authenticated;
 grant execute on function public.can_view_checkin(uuid)    to authenticated;
@@ -799,6 +904,9 @@ grant execute on function public.start_study_session(text, uuid, text, int) to a
 grant execute on function public.record_word_review(uuid, uuid, text)       to authenticated;
 grant execute on function public.auto_checkin_if_learned(date, timestamptz, int) to authenticated;
 grant execute on function public.update_word(uuid, text, text)              to authenticated;
+grant execute on function public.forum_posts_list(int, int)                 to authenticated;
+grant execute on function public.forum_post_detail(uuid)                    to authenticated;
+grant execute on function public.forum_comments_of(uuid)                    to authenticated;
 
 -- ============================================================
 -- 七、Storage：自定义头像与背景图

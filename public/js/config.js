@@ -10,6 +10,8 @@ export const PAGES = {
     tools: 'tools.html',
     record: 'record.html',
     friends: 'friends.html',
+    community: 'community.html',
+    post: 'post.html',
     profile: 'profile.html',
     guide: 'guide.html'
 };

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>论坛 - 学习打卡系统</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="manifest" href="manifest.json">
+    <link rel="preconnect" href="https://dhemqusvocjcbfvopwcm.supabase.co" crossorigin>
+    <link rel="stylesheet" href="css/style.css">
+    <script>
+        (function () {
+            try {
+                var el = document.documentElement;
+                var t = localStorage.getItem('checkin_theme') || 'system';
+                var dark = t === 'dark' || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                el.dataset.theme = dark ? 'dark' : 'light';
+
+                // 界面样式（配色）与界面透明度也在这里先套上，避免刷新时闪一下
+                var accent = localStorage.getItem('checkin_accent');
+                if (accent && accent !== 'default') el.dataset.accent = accent;
+
+                var alpha = Number(localStorage.getItem('checkin_ui_alpha'));
+                if (alpha >= 30 && alpha < 100) el.style.setProperty('--ui-alpha', alpha + '%');
+            } catch (e) {}
+        })();
+    </script>
+    <link rel="modulepreload" href="js/config.js">
+    <link rel="modulepreload" href="js/supabase.js">
+    <link rel="modulepreload" href="js/store.js">
+    <link rel="modulepreload" href="js/ui.js">
+    <link rel="modulepreload" href="js/theme.js">
+    <link rel="modulepreload" href="js/shell.js">
+    <link rel="modulepreload" href="js/api.js">
+</head>
+<body class="app-body">
+    <div class="container">
+        <div id="appShell"></div>
+
+        <section class="card">
+            <div class="card-title-row">
+                <h2 class="card-title">💬 学习论坛</h2>
+                <div class="title-actions">
+                    <button type="button" class="btn-primary" id="newPostBtn">发帖</button>
+                </div>
+            </div>
+
+            <div class="composer" id="postComposer" hidden>
+                <input type="text" class="text-input" id="postTitle" maxlength="120" placeholder="标题（必填，最多 120 字）">
+                <textarea class="text-input composer-textarea" id="postContent" maxlength="5000" rows="5" placeholder="正文…（只发图片也行）"></textarea>
+                <div class="image-picker">
+                    <input type="file" id="postImages" accept="image/*" multiple hidden>
+                    <button type="button" class="btn-ghost" id="pickImagesBtn">＋ 添加图片（最多 3 张）</button>
+                    <div class="image-preview-list" id="postImagePreview"></div>
+                </div>
+                <div class="composer-actions">
+                    <button type="button" class="btn-ghost" id="postCancel">取消</button>
+                    <button type="button" class="btn-primary" id="postSubmit">发布</button>
+                </div>
+            </div>
+
+            <div id="postList"></div>
+            <button type="button" class="btn-ghost load-more" id="loadMoreBtn" hidden>加载更多</button>
+        </section>
+    </div>
+
+    <script src="vendor/supabase.js"></script>
+    <script type="module" src="js/community.js"></script>
+</body>
+</html>

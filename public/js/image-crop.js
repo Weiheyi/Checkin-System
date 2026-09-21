@@ -218,3 +218,40 @@ export function cropImage(file, { aspect = 1, outputWidth = 512, quality = 0.85,
         img.src = objectUrl;
     });
 }
+
+// 等比缩放（不裁剪、不弹 UI）：最长边超过 maxSize 就缩到 maxSize，输出 JPEG Blob。
+// 论坛配图用这个，而不是会弹裁剪框的 cropImage。
+export function compressImage(file, { maxSize = 1600, quality = 0.85 } = {}) {
+    return new Promise((resolve, reject) => {
+        const objectUrl = URL.createObjectURL(file);
+        const img = new Image();
+
+        img.onerror = () => {
+            URL.revokeObjectURL(objectUrl);
+            reject(new Error('这个文件不是能识别的图片'));
+        };
+
+        img.onload = () => {
+            const longest = Math.max(img.naturalWidth, img.naturalHeight) || 1;
+            const ratio = Math.min(1, maxSize / longest);
+            const outW = Math.max(1, Math.round(img.naturalWidth * ratio));
+            const outH = Math.max(1, Math.round(img.naturalHeight * ratio));
+
+            const canvas = document.createElement('canvas');
+            canvas.width = outW;
+            canvas.height = outH;
+
+            const ctx = canvas.getContext('2d');
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(img, 0, 0, outW, outH);
+
+            URL.revokeObjectURL(objectUrl);
+            canvas.toBlob(blob => {
+                if (blob) resolve(blob);
+                else reject(new Error('图片处理失败，请换一张试试'));
+            }, 'image/jpeg', quality);
+        };
+
+        img.src = objectUrl;
+    });
+}

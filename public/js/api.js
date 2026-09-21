@@ -2,6 +2,7 @@ import { supabase } from './supabase.js';
 import { PAGES, AUTO_CHECKIN_WORDS } from './config.js';
 import { store } from './store.js';
 import * as net from './net.js';
+import { compressImage } from './image-crop.js';
 
 function goToLogin() {
     if (!location.pathname.endsWith(PAGES.login)) {
@@ -532,6 +533,46 @@ net.registerSyncHandler('vocab.remove', async op => {
     if (error) fail(error.message, 500);
 });
 
+// 论坛：帖子与评论都最多带 3 张图，单张不超过 5MB
+const FORUM_MAX_IMAGES = 3;
+const FORUM_MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+function mapForumPost(row) {
+    return {
+        id: row.id,
+        user_id: row.user_id,
+        nickname: row.nickname,
+        avatar_emoji: row.avatar_emoji || '',
+        avatar_url: row.avatar_url || '',
+        title: row.title,
+        content: row.content || '',
+        images: row.images || [],
+        created_at: row.created_at,
+        comment_count: row.comment_count || 0,
+        mine: !!row.mine
+    };
+}
+
+function mapForumComment(row) {
+    return {
+        id: row.id,
+        user_id: row.user_id,
+        nickname: row.nickname,
+        avatar_emoji: row.avatar_emoji || '',
+        avatar_url: row.avatar_url || '',
+        content: row.content || '',
+        images: row.images || [],
+        created_at: row.created_at,
+        mine: !!row.mine
+    };
+}
+
+function cleanForumImages(images) {
+    const list = (images || []).map(url => String(url || '').trim()).filter(Boolean);
+    if (list.length > FORUM_MAX_IMAGES) fail(`最多只能带 ${FORUM_MAX_IMAGES} 张图片`, 400);
+    return list;
+}
+
 export const api = {
     async register({ email, nickname, password }) {
         const { data, error } = await supabase.auth.signUp({
@@ -1005,6 +1046,112 @@ export const api = {
         async remove(id) {
             await requireUser();
             const { error } = await supabase.from('checkin_comments').delete().eq('id', id);
+            if (error) fail(error.message, 500);
+            return {};
+        }
+    },
+
+    posts: {
+        // 帖子列表，最新的在前；带作者昵称/头像与评论数
+        async list({ limit = 20, offset = 0 } = {}) {
+            await requireUser();
+            const { data, error } = await supabase.rpc('forum_posts_list', { p_limit: limit, p_offset: offset });
+            if (error) fail(error.message, 500);
+            return (data || []).map(mapForumPost);
+        },
+
+        async get(id) {
+            await requireUser();
+            const { data, error } = await supabase.rpc('forum_post_detail', { p_post: id });
+            if (error) fail(error.message, 500);
+            const row = (data || [])[0];
+            return row ? mapForumPost(row) : null;
+        },
+
+        async create({ title, content, images } = {}) {
+            const user = await requireUser();
+
+            const text = String(title || '').trim();
+            if (!text) fail('标题不能为空', 400);
+            if (text.length > 120) fail('标题太长了，请精简到 120 字以内', 400);
+
+            const body = String(content || '').trim();
+            if (body.length > 5000) fail('正文太长了，请精简到 5000 字以内', 400);
+
+            const list = cleanForumImages(images);
+            if (!body && !list.length) fail('正文和图片至少填一样', 400);
+
+            const { data, error } = await supabase
+                .from('forum_posts')
+                .insert({ user_id: user.id, title: text, content: body, images: list })
+                .select('id, created_at')
+                .single();
+
+            if (error) fail(error.message, 500);
+            return { post: data };
+        },
+
+        async remove(id) {
+            await requireUser();
+            const { error } = await supabase.from('forum_posts').delete().eq('id', id);
+            if (error) fail(error.message, 500);
+            return {};
+        },
+
+        // 上传一张论坛配图：先等比压缩，再传到 media 公开桶的 <用户id>/posts/ 目录
+        async uploadImage(file) {
+            const user = await requireUser();
+
+            if (!file || !String(file.type || '').startsWith('image/')) {
+                fail('只能上传图片文件', 400);
+            }
+            if (file.size > FORUM_MAX_IMAGE_BYTES) fail('图片太大了，请压缩到 5MB 以内', 400);
+
+            const blob = await compressImage(file);
+
+            const name = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+            const path = `${user.id}/posts/${name}`;
+
+            const { error } = await supabase.storage
+                .from(MEDIA_BUCKET)
+                .upload(path, blob, { upsert: false, contentType: 'image/jpeg', cacheControl: '31536000' });
+            if (error) fail(error.message, 500);
+
+            const { data } = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(path);
+            return { url: data.publicUrl };
+        }
+    },
+
+    postComments: {
+        async list(postId) {
+            await requireUser();
+            const { data, error } = await supabase.rpc('forum_comments_of', { p_post: postId });
+            if (error) fail(error.message, 500);
+            return (data || []).map(mapForumComment);
+        },
+
+        async create(postId, { content, images } = {}) {
+            const user = await requireUser();
+
+            const text = String(content || '').trim();
+            if (text.length > 2000) fail('评论太长了，请精简到 2000 字以内', 400);
+
+            const list = cleanForumImages(images);
+            if (!text && !list.length) fail('评论不能为空', 400);
+
+            const { data, error } = await supabase
+                .from('forum_comments')
+                .insert({ post_id: postId, user_id: user.id, content: text, images: list })
+                .select('id, user_id, content, images, created_at')
+                .single();
+
+            if (error) fail(error.message, 500);
+            return { comment: data };
+        },
+
+        async remove(id) {
+            await requireUser();
+            const { error } = await supabase.from('forum_comments').delete().eq('id', id);
             if (error) fail(error.message, 500);
             return {};
         }
@@ -1567,6 +1714,11 @@ const ONLINE_ONLY = {
     'messages.markRead': '标记已读',
     'comments.create': '发表评论',
     'comments.remove': '删除评论',
+    'posts.create': '发帖',
+    'posts.remove': '删除帖子',
+    'posts.uploadImage': '上传图片',
+    'postComments.create': '发表评论',
+    'postComments.remove': '删除评论',
     'feedback.create': '提交反馈',
     'feedback.remove': '删除反馈',
     'wordReports.create': '提交报错',
