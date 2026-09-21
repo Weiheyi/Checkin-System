@@ -402,6 +402,27 @@ button {
     min-height: 100vh;
 }
 
+/* 全站页脚：友情链接 */
+.app-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    margin-top: var(--space-4);
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.app-footer a {
+    color: var(--color-primary);
+    text-decoration: none;
+}
+
+.app-footer a:hover {
+    text-decoration: underline;
+}
+
 .container {
     max-width: 820px;
     margin: 0 auto;

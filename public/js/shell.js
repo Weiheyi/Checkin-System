@@ -57,6 +57,19 @@ function paintThemeButton() {
     els.theme.setAttribute('aria-label', els.theme.title);
 }
 
+// 页脚友情链接：全站共用，挂在内容容器最下面（和卡片对齐）
+function mountFooter(host) {
+    const container = host.closest('.container');
+    if (!container) return;
+
+    const footer = document.createElement('footer');
+    footer.className = 'app-footer';
+    footer.innerHTML = `
+        <span>友情链接</span>
+        <a href="https://www.leoworld.top/" target="_blank" rel="noopener noreferrer">浣秋の語 · 浣秋和同学的小站</a>`;
+    container.appendChild(footer);
+}
+
 // 渲染顶部栏与移动端底部导航；页面里只需一个 <div id="appShell"></div> 挂载点
 export function mountShell({ active }) {
     const host = document.getElementById('appShell');
@@ -89,6 +102,8 @@ export function mountShell({ active }) {
     tabbar.setAttribute('aria-label', '底部导航');
     tabbar.innerHTML = tabItems(active);
     document.body.appendChild(tabbar);
+
+    mountFooter(host);
 
     els.avatar = host.querySelector('#shellAvatar');
     els.name = host.querySelector('#shellName');

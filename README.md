@@ -5,6 +5,8 @@
 
 线上地址：https://Weiheyi.github.io/Checkin-System/
 
+友情链接：[浣秋の語](https://www.leoworld.top/) —— 浣秋和同学的小站，AP 学习笔记 / 古诗词整理 / 技术折腾 / 影视推荐。
+
 ## 功能
 
 - 邮箱 + 密码注册登录（不依赖任何邮件流程，注册后直接可用）
