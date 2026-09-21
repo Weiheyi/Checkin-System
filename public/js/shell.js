@@ -57,7 +57,7 @@ function paintThemeButton() {
     els.theme.setAttribute('aria-label', els.theme.title);
 }
 
-// 页脚友情链接：全站共用，挂在内容容器最下面（和卡片对齐）
+// 页脚：工作室入口 + 友情链接，全站共用，挂在内容容器最下面（和卡片对齐）
 function mountFooter(host) {
     const container = host.closest('.container');
     if (!container) return;
@@ -65,8 +65,9 @@ function mountFooter(host) {
     const footer = document.createElement('footer');
     footer.className = 'app-footer';
     footer.innerHTML = `
-        <span>友情链接</span>
-        <a href="https://www.leoworld.top/" target="_blank" rel="noopener noreferrer">浣秋の語 · 浣秋和同学的小站</a>`;
+        <a href="studio.html" title="进入需要密钥">🔑 策索工作室</a>
+        <span class="app-footer-sep" aria-hidden="true">·</span>
+        <a href="https://www.leoworld.top/" target="_blank" rel="noopener noreferrer">浣秋の語</a>`;
     container.appendChild(footer);
 }
 

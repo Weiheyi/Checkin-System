@@ -22,7 +22,8 @@ const PAGES = [
     'record.html',
     'friends.html',
     'profile.html',
-    'guide.html'
+    'guide.html',
+    'studio.html'
 ];
 
 // 从 HTML 里把本地 css / js 抠出来，省得手写一份随时会过期的清单

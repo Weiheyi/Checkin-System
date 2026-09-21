@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>策索工作室 · Cerso</title>
+    <meta name="description" content="策索（Cerso）工作室：策马扬鞭，上下求索。">
+    <meta name="theme-color" content="#f6f1e7" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#1b1917" media="(prefers-color-scheme: dark)">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="css/studio.css">
+    <script>
+        // 与打卡站共用同一个主题 key，深浅色保持一致；避免刷新时闪一下
+        (function () {
+            try {
+                var t = localStorage.getItem('checkin_theme') || 'system';
+                var dark = t === 'dark' || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+            } catch (e) {}
+        })();
+    </script>
+</head>
+<body class="studio">
+    <a class="skip" href="#page">跳到内容</a>
+
+    <!-- 密钥门：没解锁前盖住整页 -->
+    <div class="gate" id="gate">
+        <form class="gate-card" id="gateForm" novalidate>
+            <div class="seal seal-lg" aria-hidden="true"><span>策</span><span>索</span></div>
+            <p class="gate-en">CERSO STUDIO</p>
+            <h1 class="gate-title">策索工作室</h1>
+            <p class="gate-sub">输入密钥进入</p>
+
+            <div class="field">
+                <label class="field-label" for="gateKey">密钥</label>
+                <div class="field-row">
+                    <input id="gateKey" class="field-input" type="password" name="key"
+                           autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+                           placeholder="请输入密钥" aria-describedby="gateError">
+                    <button type="button" class="field-toggle" id="gateToggle" aria-pressed="false">显示</button>
+                </div>
+            </div>
+
+            <p class="gate-error" id="gateError" role="alert" hidden></p>
+
+            <button type="submit" class="btn" id="gateSubmit">进入工作室</button>
+        </form>
+        <p class="gate-hint">仅限受邀成员与朋友</p>
+        <noscript><p class="gate-noscript">进入工作室需要开启 JavaScript。</p></noscript>
+    </div>
+
+    <!-- 工作室主页；未解锁时 inert + aria-hidden，解锁后由脚本放开 -->
+    <main class="page" id="page" inert aria-hidden="true">
+        <header class="topbar">
+            <a class="brand" href="#top">
+                <span class="seal seal-sm" aria-hidden="true">策索</span>
+                <span class="brand-text">策索<span class="brand-en">CERSO</span></span>
+            </a>
+            <div class="topbar-actions">
+                <button class="icon-btn" id="themeBtn" type="button" aria-label="切换深浅色">☾</button>
+                <a class="topbar-link" href="dashboard.html">返回打卡站</a>
+            </div>
+        </header>
+
+        <section class="hero" id="top">
+            <p class="hero-meta">河南 · 学生工作室</p>
+            <h1 class="hero-title">
+                <span class="hero-cn">策索</span>
+                <span class="hero-en">Cerso</span>
+            </h1>
+            <p class="hero-creed">策马扬鞭，上下求索</p>
+            <p class="hero-lead">
+                策是扬鞭起行，索是往深处追问。我们把这个名字留给每一次动手，也留给每一次较真。
+            </p>
+        </section>
+
+        <section class="section" id="creed">
+            <p class="section-index">一 · 理念</p>
+            <h2 class="section-title">策马扬鞭，上下求索</h2>
+
+            <div class="creed-grid">
+                <article class="creed-item">
+                    <span class="creed-char" aria-hidden="true">策</span>
+                    <h3>先跑起来</h3>
+                    <p>想清楚三成就动手，剩下的路在跑动里修正。扬鞭是开始，不是准备。</p>
+                </article>
+                <article class="creed-item">
+                    <span class="creed-char" aria-hidden="true">索</span>
+                    <h3>再往深处找</h3>
+                    <p>不满足于「能用就行」：一遍遍地试，直到它真的对得起花掉的时间。</p>
+                </article>
+            </div>
+
+            <p class="section-note">「上下求索」语出《离骚》——路漫漫其修远兮，吾将上下而求索。</p>
+        </section>
+
+        <section class="section" id="goal">
+            <p class="section-index">二 · 目标</p>
+            <h2 class="section-title">集聚智慧，创造优质天然肥料</h2>
+            <p class="section-lead">
+                一个人的想法不够用，就凑一群人一起想办法——攒够了，慢慢发酵成能分给别人的东西。
+            </p>
+        </section>
+
+        <section class="section" id="team">
+            <p class="section-index">三 · 成员</p>
+            <h2 class="section-title">五个人</h2>
+
+            <ol class="roster">
+                <li class="roster-row">
+                    <span class="roster-no">01</span>
+                    <span class="roster-name">xxl</span>
+                    <span class="roster-role">艺术总监</span>
+                </li>
+                <li class="roster-row">
+                    <span class="roster-no">02</span>
+                    <span class="roster-name">why</span>
+                    <span class="roster-role">执行总监</span>
+                </li>
+                <li class="roster-row">
+                    <span class="roster-no">03</span>
+                    <span class="roster-name">qjy</span>
+                    <span class="roster-role">技术指导</span>
+                </li>
+                <li class="roster-row">
+                    <span class="roster-no">04</span>
+                    <span class="roster-name">sgeq</span>
+                    <span class="roster-role">艺术指导</span>
+                </li>
+                <li class="roster-row">
+                    <span class="roster-no">05</span>
+                    <span class="roster-name">zph</span>
+                    <span class="roster-role">品鉴总监</span>
+                </li>
+            </ol>
+        </section>
+
+        <footer class="foot">
+            <div class="seal seal-sm" aria-hidden="true">策索</div>
+            <p class="foot-line">策索工作室 · Cerso · 河南</p>
+            <nav class="foot-links" aria-label="相关链接">
+                <a href="dashboard.html">学习打卡站</a>
+                <a href="https://www.leoworld.top/" target="_blank" rel="noopener noreferrer">浣秋の語</a>
+            </nav>
+        </footer>
+    </main>
+
+    <script type="module" src="js/studio.js"></script>
+</body>
+</html>

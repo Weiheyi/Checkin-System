@@ -423,6 +423,10 @@ button {
     text-decoration: underline;
 }
 
+.app-footer-sep {
+    color: var(--text-faint);
+}
+
 .container {
     max-width: 820px;
     margin: 0 auto;
