@@ -1,5 +1,5 @@
 import { supabase } from './supabase.js';
-import { PAGES } from './config.js';
+import { PAGES, AUTO_CHECKIN_WORDS } from './config.js';
 import { store } from './store.js';
 import * as net from './net.js';
 
@@ -21,6 +21,11 @@ function todayStr(date = new Date()) {
     const m = String(date.getMonth() + 1).padStart(2, '0');
     const d = String(date.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
+}
+
+// 本地当天 0 点对应的时刻，用来数「今天学的词」（服务端按 created_at >= 这个值过滤）
+function localDayStartISO(date = new Date()) {
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate()).toISOString();
 }
 
 // 读取本地会话中的用户；无会话则清理并跳回登录页
@@ -485,6 +490,14 @@ net.registerSyncHandler('study', async op => {
         });
         if (error) fail(error.message, 500);
     }
+
+    // 离线期间的学习补传完，按同步当天补一次自动打卡（失败不影响补传本身）
+    const now = new Date();
+    await supabase.rpc('auto_checkin_if_learned', {
+        p_day: todayStr(now),
+        p_since: localDayStartISO(now),
+        p_threshold: AUTO_CHECKIN_WORDS
+    });
 });
 
 net.registerSyncHandler('words.add', async op => {
@@ -597,6 +610,38 @@ export const api = {
             today.checkin = checkin;
             today.tasks = [];
         });
+
+        return { checkin };
+    },
+
+    // 当天学习（背诵 / 考核 / 灭错）累计到 N 个不同单词就自动打卡。
+    // 计数与建打卡都在服务端一次完成、天然幂等；离线时不即时打卡，
+    // 等这轮学习同步到云端后由 'study' 同步处理器补上
+    async autoCheckin() {
+        if (net.isOffline()) return { checkin: null };
+
+        await requireUser();
+        const now = new Date();
+        const { data, error } = await supabase.rpc('auto_checkin_if_learned', {
+            p_day: todayStr(now),
+            p_since: localDayStartISO(now),
+            p_threshold: AUTO_CHECKIN_WORDS
+        });
+
+        if (error) fail(error.message, 500);
+
+        const row = data && data[0];
+        if (!row) return { checkin: null };
+
+        // 服务端补建的打卡要同步进本地缓存，界面（以及随后记任务用的 getTodayCheckin）才能看到
+        const checkin = mapCheckin(row);
+        cacheTodayChange(today => {
+            if (today.checkin) return;
+            today.checked = true;
+            today.checkin = checkin;
+        });
+        net.dropCache('stats');
+        net.dropCache('history');
 
         return { checkin };
     },
@@ -839,6 +884,128 @@ export const api = {
                 if (error) fail(error.message, 500);
             }
 
+            return {};
+        }
+    },
+
+    // 好友私信：一对一收发，读取时顺带标记已读
+    messages: {
+        // 会话列表：每个好友一行，带最后一条消息与未读数
+        async overview() {
+            await requireUser();
+            const { data, error } = await supabase.rpc('message_overview');
+            if (error) fail(error.message, 500);
+            return data || [];
+        },
+
+        // 我收到的未读总数（好友页「私信」角标用）
+        async unreadCount() {
+            const user = await requireUser();
+            const { count, error } = await supabase
+                .from('messages')
+                .select('id', { count: 'exact', head: true })
+                .eq('recipient_id', user.id)
+                .is('read_at', null);
+
+            if (error) fail(error.message, 500);
+            return count || 0;
+        },
+
+        // 和某个好友的往来消息，按时间正序
+        async thread(friendId, limit = 300) {
+            const user = await requireUser();
+            const { data, error } = await supabase
+                .from('messages')
+                .select('id, sender_id, recipient_id, content, read_at, created_at')
+                .or(`and(sender_id.eq.${user.id},recipient_id.eq.${friendId}),and(sender_id.eq.${friendId},recipient_id.eq.${user.id})`)
+                .order('created_at', { ascending: true })
+                .order('id', { ascending: true })
+                .limit(limit);
+
+            if (error) fail(error.message, 500);
+
+            return (data || []).map(row => ({
+                id: row.id,
+                sender_id: row.sender_id,
+                recipient_id: row.recipient_id,
+                content: row.content,
+                read_at: row.read_at || null,
+                created_at: row.created_at,
+                mine: row.sender_id === user.id
+            }));
+        },
+
+        async send(friendId, content) {
+            const user = await requireUser();
+            const text = String(content || '').trim();
+            if (!text) fail('消息不能为空', 400);
+            if (text.length > 2000) fail('消息太长了，请精简到 2000 字以内', 400);
+
+            const { error } = await supabase.from('messages').insert({
+                sender_id: user.id,
+                recipient_id: friendId,
+                content: text
+            });
+
+            if (error) fail(error.message, 500);
+            return {};
+        },
+
+        // 把该好友发给我、还没读的消息标记为已读
+        async markRead(friendId) {
+            const user = await requireUser();
+            const { error } = await supabase
+                .from('messages')
+                .update({ read_at: new Date().toISOString() })
+                .eq('recipient_id', user.id)
+                .eq('sender_id', friendId)
+                .is('read_at', null);
+
+            if (error) fail(error.message, 500);
+            return {};
+        }
+    },
+
+    // 好友动态评论
+    comments: {
+        // 一条打卡下的评论（带昵称/头像，只能看得到自己 / 好友的打卡）
+        async list(checkinId) {
+            await requireUser();
+            const { data, error } = await supabase.rpc('checkin_comments_of', { p_checkin: checkinId });
+            if (error) fail(error.message, 500);
+
+            return (data || []).map(row => ({
+                id: row.id,
+                user_id: row.user_id,
+                nickname: row.nickname,
+                avatar_emoji: row.avatar_emoji || '',
+                avatar_url: row.avatar_url || '',
+                content: row.content,
+                created_at: row.created_at,
+                mine: !!row.mine
+            }));
+        },
+
+        async create(checkinId, content) {
+            const user = await requireUser();
+            const text = String(content || '').trim();
+            if (!text) fail('评论不能为空', 400);
+            if (text.length > 1000) fail('评论太长了，请精简到 1000 字以内', 400);
+
+            const { data, error } = await supabase
+                .from('checkin_comments')
+                .insert({ checkin_id: checkinId, user_id: user.id, content: text })
+                .select('id, user_id, content, created_at')
+                .single();
+
+            if (error) fail(error.message, 500);
+            return { comment: data };
+        },
+
+        async remove(id) {
+            await requireUser();
+            const { error } = await supabase.from('checkin_comments').delete().eq('id', id);
+            if (error) fail(error.message, 500);
             return {};
         }
     },
@@ -1396,6 +1563,10 @@ const ONLINE_ONLY = {
     'friends.addByEmail': '添加好友',
     'friends.remove': '删除好友',
     'likes.toggle': '点赞',
+    'messages.send': '发送私信',
+    'messages.markRead': '标记已读',
+    'comments.create': '发表评论',
+    'comments.remove': '删除评论',
     'feedback.create': '提交反馈',
     'feedback.remove': '删除反馈',
     'wordReports.create': '提交报错',

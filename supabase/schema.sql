@@ -188,12 +188,35 @@ create table if not exists public.checkin_likes (
   primary key (checkin_id, user_id)
 );
 
+-- 打卡评论：好友动态下可以评论，仅自己 / 好友可见的打卡能评论
+create table if not exists public.checkin_comments (
+  id uuid primary key default gen_random_uuid(),
+  checkin_id uuid not null references public.checkins(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  content text not null check (char_length(content) between 1 and 1000),
+  created_at timestamptz not null default now()
+);
+
+-- 私信：好友之间一对一收发，read_at 为空表示对方还没读
+create table if not exists public.messages (
+  id uuid primary key default gen_random_uuid(),
+  sender_id uuid not null references auth.users(id) on delete cascade,
+  recipient_id uuid not null references auth.users(id) on delete cascade,
+  content text not null check (char_length(content) between 1 and 2000),
+  read_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
 create index if not exists tasks_checkin_id_idx        on public.tasks(checkin_id);
 create index if not exists checkins_user_date_idx      on public.checkins(user_id, checkin_date);
 create index if not exists checkins_user_date_desc_idx on public.checkins(user_id, checkin_date desc);
 create index if not exists friendships_user_a_idx      on public.friendships(user_a);
 create index if not exists friendships_user_b_idx      on public.friendships(user_b);
 create index if not exists checkin_likes_checkin_idx   on public.checkin_likes(checkin_id);
+create index if not exists checkin_comments_checkin_idx on public.checkin_comments(checkin_id, created_at);
+create index if not exists checkin_comments_user_idx    on public.checkin_comments(user_id);
+create index if not exists messages_sender_idx          on public.messages(sender_id, created_at desc);
+create index if not exists messages_recipient_idx       on public.messages(recipient_id, created_at desc);
 create index if not exists wordbooks_user_idx          on public.wordbooks(user_id);
 create index if not exists words_book_idx              on public.words(book_id);
 create index if not exists words_user_idx              on public.words(user_id);
@@ -234,6 +257,8 @@ alter table public.checkins      enable row level security;
 alter table public.tasks         enable row level security;
 alter table public.friendships   enable row level security;
 alter table public.checkin_likes enable row level security;
+alter table public.checkin_comments enable row level security;
+alter table public.messages      enable row level security;
 alter table public.wordbooks     enable row level security;
 alter table public.words         enable row level security;
 alter table public.study_sessions enable row level security;
@@ -280,6 +305,28 @@ drop policy if exists "likes: delete own"   on public.checkin_likes;
 create policy "likes: read visible" on public.checkin_likes for select using (auth.uid() = user_id or public.can_view_checkin(checkin_id));
 create policy "likes: insert own"   on public.checkin_likes for insert with check (auth.uid() = user_id and public.can_view_checkin(checkin_id));
 create policy "likes: delete own"   on public.checkin_likes for delete using (auth.uid() = user_id);
+
+-- checkin_comments：能看这条打卡（本人 / 好友）就能看评论、发评论，只能删自己的
+drop policy if exists "comments: read visible" on public.checkin_comments;
+drop policy if exists "comments: insert own"   on public.checkin_comments;
+drop policy if exists "comments: delete own"   on public.checkin_comments;
+create policy "comments: read visible" on public.checkin_comments for select using (public.can_view_checkin(checkin_id));
+create policy "comments: insert own"   on public.checkin_comments for insert with check (auth.uid() = user_id and public.can_view_checkin(checkin_id));
+create policy "comments: delete own"   on public.checkin_comments for delete using (auth.uid() = user_id);
+
+-- messages：本人收发的可见；只能发给好友；收件人可标记已读；自己参与的会话可删
+drop policy if exists "messages: read own"           on public.messages;
+drop policy if exists "messages: send to friend"     on public.messages;
+drop policy if exists "messages: recipient mark read" on public.messages;
+drop policy if exists "messages: delete own"         on public.messages;
+create policy "messages: read own" on public.messages for select
+  using (auth.uid() = sender_id or auth.uid() = recipient_id);
+create policy "messages: send to friend" on public.messages for insert
+  with check (auth.uid() = sender_id and public.are_friends(auth.uid(), recipient_id));
+create policy "messages: recipient mark read" on public.messages for update
+  using (auth.uid() = recipient_id) with check (auth.uid() = recipient_id);
+create policy "messages: delete own" on public.messages for delete
+  using (auth.uid() = sender_id or auth.uid() = recipient_id);
 
 -- wordbooks / words：纯个人数据，仅本人可读写（不开放给好友）
 drop policy if exists "wordbooks: own all" on public.wordbooks;
@@ -436,12 +483,58 @@ language sql security definer stable set search_path = public as $$
   left join public.profiles p on p.id = fl.fid;
 $$;
 
--- 好友动态流（一次拿全：昵称/任务完成/点赞数/我是否点赞）
+-- 私信会话列表：每个好友一行，带最后一条消息与未读数（没有消息的好友 unread=0、last 为空）
+create or replace function public.message_overview()
+returns table (
+  friend_id uuid, nickname text, avatar_emoji text, avatar_url text,
+  last_content text, last_at timestamptz, last_from_me boolean, unread bigint
+)
+language plpgsql security definer stable set search_path = public as $$
+declare me uuid := auth.uid();
+begin
+  if me is null then raise exception '请先登录'; end if;
+
+  return query
+  with fl as (
+    select case when f.user_a = me then f.user_b else f.user_a end as fid
+    from public.friendships f
+    where f.status = 'accepted' and me in (f.user_a, f.user_b)
+  ),
+  last as (
+    select distinct on (case when m.sender_id = me then m.recipient_id else m.sender_id end)
+      case when m.sender_id = me then m.recipient_id else m.sender_id end as fid,
+      m.content, m.created_at, (m.sender_id = me) as from_me
+    from public.messages m
+    where m.sender_id = me or m.recipient_id = me
+    order by (case when m.sender_id = me then m.recipient_id else m.sender_id end), m.created_at desc
+  ),
+  unread as (
+    select m.sender_id as fid, count(*)::bigint as n
+    from public.messages m
+    where m.recipient_id = me and m.read_at is null
+    group by m.sender_id
+  )
+  select fl.fid,
+         coalesce(nullif(p.nickname, ''), '用户'),
+         p.avatar_emoji, p.avatar_url,
+         l.content, l.created_at, coalesce(l.from_me, false),
+         coalesce(u.n, 0)
+  from fl
+  left join public.profiles p on p.id = fl.fid
+  left join last l on l.fid = fl.fid
+  left join unread u on u.fid = fl.fid
+  order by l.created_at desc nulls last, fl.fid;
+end; $$;
+
+-- 好友动态流（一次拿全：昵称/任务完成/点赞数/我是否点赞/评论数）
+-- 返回类型加过 comment_count，create or replace 不能改返回类型，必须先 drop 再建
+drop function if exists public.friend_feed(int);
 create or replace function public.friend_feed(p_limit int default 20)
 returns table (
   checkin_id uuid, user_id uuid, nickname text, avatar_emoji text,
   checkin_date date, content text, created_at timestamptz,
-  task_total int, task_done int, like_count int, liked_by_me boolean
+  task_total int, task_done int, like_count int, liked_by_me boolean,
+  comment_count int
 )
 language sql security definer stable set search_path = public as $$
   with me as (select auth.uid() as uid),
@@ -457,12 +550,32 @@ language sql security definer stable set search_path = public as $$
     (select count(*)::int from public.tasks t where t.checkin_id = c.id),
     (select count(*)::int from public.tasks t where t.checkin_id = c.id and t.completed),
     (select count(*)::int from public.checkin_likes l where l.checkin_id = c.id),
-    exists(select 1 from public.checkin_likes l where l.checkin_id = c.id and l.user_id = (select uid from me))
+    exists(select 1 from public.checkin_likes l where l.checkin_id = c.id and l.user_id = (select uid from me)),
+    (select count(*)::int from public.checkin_comments cc where cc.checkin_id = c.id)
   from public.checkins c
   join fl on fl.fid = c.user_id
   left join public.profiles p on p.id = c.user_id
   order by c.checkin_date desc, c.created_at desc
   limit p_limit;
+$$;
+
+-- 一条打卡下的评论（带昵称/头像）。profiles 的主键指向 auth.users，
+-- PostgREST 不能直接 embed，所以在这里 join 好一次返回。
+-- security definer 绕过了 RLS，必须自己用 can_view_checkin 限定可见范围。
+create or replace function public.checkin_comments_of(p_checkin uuid)
+returns table (
+  id uuid, user_id uuid, nickname text, avatar_emoji text, avatar_url text,
+  content text, created_at timestamptz, mine boolean
+)
+language sql security definer stable set search_path = public as $$
+  select cc.id, cc.user_id,
+         coalesce(nullif(p.nickname, ''), '用户'), p.avatar_emoji, p.avatar_url,
+         cc.content, cc.created_at, (cc.user_id = auth.uid())
+  from public.checkin_comments cc
+  left join public.profiles p on p.id = cc.user_id
+  where cc.checkin_id = p_checkin
+    and public.can_view_checkin(p_checkin)
+  order by cc.created_at asc;
 $$;
 
 -- 个人统计一次拿全（替代原来的 4 次 count 请求）
@@ -578,6 +691,53 @@ begin
   return next rec;
 end; $$;
 
+-- 今日已学习的「不同单词」数达到阈值就自动打卡（背诵 + 考核 + 灭错合并，任何结果都算）。
+-- p_day 是客户端本地日期（做 checkin_date 与「今天是否已打卡」判断），
+-- p_since 是客户端本地当天 0 点对应的时刻，用来数「今天学的词」，避免服务器 UTC 时区错位。
+-- 幂等：已有打卡直接返回空，靠 unique(user_id, checkin_date) 兜住并发。
+create or replace function public.auto_checkin_if_learned(
+  p_day date,
+  p_since timestamptz,
+  p_threshold int default 5
+) returns setof public.checkins
+language plpgsql security definer set search_path = public as $$
+declare
+  me uuid := auth.uid();
+  learned int;
+  rec public.checkins;
+begin
+  if me is null then raise exception '请先登录'; end if;
+  if p_day is null or p_since is null then raise exception '缺少日期参数'; end if;
+
+  -- 今天已经有打卡就不用再建
+  if exists (select 1 from public.checkins c
+              where c.user_id = me and c.checkin_date = p_day) then
+    return;
+  end if;
+
+  select count(distinct l.word_id) into learned
+    from public.study_logs l
+   where l.user_id = me
+     and l.word_id is not null
+     and l.created_at >= p_since;
+
+  if learned < greatest(coalesce(p_threshold, 5), 1) then return; end if;
+
+  insert into public.checkins (user_id, checkin_date, content)
+  values (me, p_day, '📚 学习打卡：今日已学习 ' || learned || ' 个单词')
+  on conflict (user_id, checkin_date) do nothing
+  returning * into rec;
+
+  if not found then
+    -- 并发下已被建过，返回既有那条
+    return query select * from public.checkins c
+                  where c.user_id = me and c.checkin_date = p_day;
+    return;
+  end if;
+
+  return next rec;
+end; $$;
+
 -- 用户自行修正词条：改单词 / 释义，并把该词历史背诵明细里的冗余快照一起更新。
 -- 一次事务完成，避免「词条改了、历史没改」这种半截状态。
 create or replace function public.update_word(
@@ -619,9 +779,12 @@ revoke all on function public.can_view_checkin(uuid)       from public, anon;
 revoke all on function public.add_friend_by_email(text)    from public, anon;
 revoke all on function public.friends_overview()           from public, anon;
 revoke all on function public.friend_feed(int)             from public, anon;
+revoke all on function public.checkin_comments_of(uuid)    from public, anon;
+revoke all on function public.message_overview()           from public, anon;
 revoke all on function public.my_stats()                   from public, anon;
 revoke all on function public.start_study_session(text, uuid, text, int) from public, anon;
 revoke all on function public.record_word_review(uuid, uuid, text)       from public, anon;
+revoke all on function public.auto_checkin_if_learned(date, timestamptz, int) from public, anon;
 revoke all on function public.update_word(uuid, text, text)              from public, anon;
 
 grant execute on function public.are_friends(uuid, uuid)   to authenticated;
@@ -629,9 +792,12 @@ grant execute on function public.can_view_checkin(uuid)    to authenticated;
 grant execute on function public.add_friend_by_email(text) to authenticated;
 grant execute on function public.friends_overview()        to authenticated;
 grant execute on function public.friend_feed(int)          to authenticated;
+grant execute on function public.checkin_comments_of(uuid) to authenticated;
+grant execute on function public.message_overview()        to authenticated;
 grant execute on function public.my_stats()                to authenticated;
 grant execute on function public.start_study_session(text, uuid, text, int) to authenticated;
 grant execute on function public.record_word_review(uuid, uuid, text)       to authenticated;
+grant execute on function public.auto_checkin_if_learned(date, timestamptz, int) to authenticated;
 grant execute on function public.update_word(uuid, text, text)              to authenticated;
 
 -- ============================================================

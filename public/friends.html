@@ -42,6 +42,7 @@
                 <button type="button" class="active" data-tab="feed" role="tab" aria-selected="true">动态</button>
                 <button type="button" data-tab="rank" role="tab" aria-selected="false">排行榜</button>
                 <button type="button" data-tab="friends" role="tab" aria-selected="false">好友</button>
+                <button type="button" data-tab="messages" role="tab" aria-selected="false">私信<span class="seg-badge" id="msgBadge" hidden></span></button>
             </div>
 
             <div id="panelFeed">
@@ -58,6 +59,11 @@
                     <button class="add-task-btn" id="addFriendBtn" type="button">添加</button>
                 </div>
                 <div id="friendList"></div>
+            </div>
+
+            <div id="panelMessages" hidden>
+                <div id="msgList"></div>
+                <div id="msgThread" hidden></div>
             </div>
         </section>
     </div>

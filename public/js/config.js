@@ -32,3 +32,7 @@ export const ACCENTS = [
 
 // 个人中心可选的预设头像
 export const AVATAR_CHOICES = ['📚', '🔥', '🌟', '🚀', '🎯', '🌱', '🧠', '💪', '☕', '🎨', '🎧', '🐱'];
+
+// 当天学习（背诵 + 考核 + 灭错）累计复习到这么多个「不同单词」就自动打卡。
+// 与服务端 auto_checkin_if_learned 的默认阈值保持一致（前端会把值传过去）
+export const AUTO_CHECKIN_WORDS = 5;

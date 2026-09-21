@@ -1009,6 +1009,292 @@ button {
     animation: pop 0.3s ease;
 }
 
+/* ========== 动态评论 ========== */
+.feed-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.comment-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: var(--radius-pill);
+    font-size: 13px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.comment-btn:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+.comment-box {
+    margin-top: var(--space-3);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border);
+}
+
+.comment-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+}
+
+.comment-item {
+    display: flex;
+    gap: var(--space-2);
+}
+
+.comment-avatar {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: var(--gradient);
+    color: #fff;
+    font-weight: 600;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.comment-avatar.has-emoji {
+    font-size: 15px;
+}
+
+.comment-main {
+    flex: 1;
+    min-width: 0;
+}
+
+.comment-head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+}
+
+.comment-author {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text-strong);
+}
+
+.comment-time {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.comment-del {
+    margin-left: auto;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.comment-del:hover {
+    color: var(--color-danger);
+}
+
+.comment-text {
+    margin-top: 2px;
+    font-size: 14px;
+    color: var(--text);
+    overflow-wrap: break-word;
+    white-space: pre-wrap;
+}
+
+.comment-form {
+    display: flex;
+    gap: var(--space-2);
+}
+
+/* ========== 私信 ========== */
+.seg-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    margin-left: 5px;
+    padding: 0 4px;
+    background: var(--color-danger);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    border-radius: var(--radius-pill);
+    vertical-align: middle;
+}
+
+/* 类选择器会盖过 UA 的 [hidden]，这里显式让隐藏生效 */
+.seg-badge[hidden] {
+    display: none;
+}
+
+.msg-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    width: 100%;
+    padding: var(--space-3);
+    margin-bottom: var(--space-2);
+    background: var(--bg);
+    border: none;
+    border-radius: var(--radius-md);
+    text-align: left;
+    cursor: pointer;
+    transition: background var(--transition);
+}
+
+.msg-item:hover {
+    background: var(--color-primary-soft);
+}
+
+.msg-avatar {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: var(--gradient);
+    color: #fff;
+    font-weight: 600;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.msg-avatar.has-emoji {
+    font-size: 20px;
+}
+
+.msg-main {
+    flex: 1;
+    min-width: 0;
+}
+
+.msg-name {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-strong);
+}
+
+.msg-preview {
+    margin-top: 2px;
+    font-size: 13px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.msg-tail {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+}
+
+.msg-time {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.msg-unread {
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    background: var(--color-danger);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 18px;
+    text-align: center;
+    border-radius: var(--radius-pill);
+}
+
+.msg-thread-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding-bottom: var(--space-2);
+    margin-bottom: var(--space-3);
+    border-bottom: 1px solid var(--border);
+}
+
+.msg-thread-name {
+    font-weight: 600;
+    color: var(--text-strong);
+}
+
+.msg-thread-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    max-height: 55vh;
+    overflow-y: auto;
+    padding: var(--space-1);
+    margin-bottom: var(--space-3);
+}
+
+.msg-bubble {
+    align-self: flex-start;
+    max-width: 78%;
+    padding: var(--space-2) var(--space-3);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+}
+
+.msg-bubble.mine {
+    align-self: flex-end;
+    background: var(--color-primary-soft);
+    border-color: transparent;
+}
+
+.msg-text {
+    font-size: 14px;
+    color: var(--text);
+    overflow-wrap: break-word;
+    white-space: pre-wrap;
+}
+
+.msg-meta {
+    margin-top: 3px;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.msg-bubble.mine .msg-meta {
+    text-align: right;
+}
+
+.msg-form {
+    display: flex;
+    gap: var(--space-2);
+}
+
+/* 私信 / 评论头像显示上传的图片时铺满头像框 */
+.msg-avatar.has-image,
+.comment-avatar.has-image {
+    background-size: cover;
+    background-position: center;
+    background-color: var(--bg);
+}
+
 /* ========== 排行榜 / 好友列表 ========== */
 .lb-item {
     display: flex;

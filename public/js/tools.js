@@ -1,4 +1,4 @@
-import { PAGES } from './config.js';
+import { PAGES, AUTO_CHECKIN_WORDS } from './config.js';
 import { api } from './api.js';
 import { $, $$, toast, confirmDialog, chooseDialog, reportDialog, setLoading, skeletonRows } from './ui.js';
 import { initShell } from './shell.js';
@@ -2360,11 +2360,16 @@ function applyElimResult(word, correct) {
 
 /* ---------------- 共用 ---------------- */
 
-// 背完 / 考完 / 灭完自动往「今天的打卡任务」里记一条（算已完成），
-// 这样完成率能反映学习量，而不是背了一天还是 0%；今天没打卡就静默跳过
+// 背完 / 考完 / 灭完：先看当天学习累计够不够自动打卡（够就补一条打卡），
+// 再把这一轮记进「今天的打卡任务」（算已完成）——
+// 没打卡时 addStudyTask 仍会静默跳过，所以顺序必须是「先打卡再记任务」
 function recordStudyTask(text) {
-    api.tasks
-        .addStudyTask(text)
+    api.autoCheckin()
+        .catch(() => ({ checkin: null }))
+        .then(({ checkin }) => {
+            if (checkin) toast(`📚 今日学习满 ${AUTO_CHECKIN_WORDS} 个单词，已自动打卡！`, 'success');
+            return api.tasks.addStudyTask(text);
+        })
         .then(({ task }) => {
             if (task) toast(`已记入今日任务：${text}`, 'success');
         })
