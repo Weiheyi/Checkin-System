@@ -1370,6 +1370,8 @@ button {
 .modal-box {
     width: 100%;
     max-width: 380px;
+    max-height: calc(100vh - var(--space-4) * 2);
+    overflow-y: auto;
     background: var(--surface);
     border-radius: var(--radius-lg);
     padding: var(--space-4);
@@ -1464,6 +1466,11 @@ button {
 .report-note:focus {
     outline: none;
     border-color: var(--color-primary);
+}
+
+/* 修正词条弹窗：单词 / 释义两个输入框的间距 */
+.report-box .report-field {
+    margin-bottom: var(--space-3);
 }
 
 /* 背诵卡片翻开释义后的报错入口 */

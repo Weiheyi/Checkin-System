@@ -1120,6 +1120,24 @@ export const api = {
             return {};
         },
 
+        // 用户自行修正词条：改单词 / 释义，并同步该词历史背诵明细里的冗余快照。
+        // 服务端 update_word 一次事务完成，避免「词条改了、历史没改」这种半截状态
+        async updateWord(id, { term, meaning }) {
+            await requireUser();
+
+            const text = String(term || '').trim();
+            if (!text) fail('单词不能为空', 400);
+
+            const { data, error } = await supabase.rpc('update_word', {
+                p_word_id: id,
+                p_term: text,
+                p_meaning: String(meaning || '').trim()
+            });
+
+            if (error) fail(error.message, 500);
+            return { word: data && data[0] ? mapWord(data[0]) : null };
+        },
+
         // 开始一次背诵 / 考核，返回会话 id（前端在第一次作答时才调用）。
         // 离线时先返回一个本地 runId，同步时再真正建会话，逐词作答挂在同一条队列里
         async startSession({ mode, bookId, bookName, total }) {
@@ -1386,6 +1404,7 @@ const ONLINE_ONLY = {
     'wordbooks.rename': '重命名单词本',
     'wordbooks.remove': '删除单词本',
     'wordbooks.removeWord': '删除单词',
+    'wordbooks.updateWord': '修改词条',
     'wordbooks.resetProgress': '清空背诵进度'
 };
 

@@ -268,9 +268,10 @@ export function chooseDialog({ title = '请选择', message = '', options = [], 
     });
 }
 
-/* ---------------- 词条报错 ---------------- */
+/* ---------------- 词条报错 / 修正 ---------------- */
 
-// 原因按遇到的多寡排，第一条默认选中，多数时候点一下「提交报错」就够了
+// 原因按遇到的多寡排：只报错时第一条默认选中，点一下「提交报错」就够了；
+// 直接改词条时默认都不选（原因是顺带备注，可以不选）
 const REPORT_REASONS = [
     '释义不对（意思对不上）',
     '中英切分错了（单词和释义串行）',
@@ -279,9 +280,12 @@ const REPORT_REASONS = [
     '其他问题'
 ];
 
-// 词条报错：先把当前单词与释义原样列出来（免得报到别的词上），
-// 再让用户选一个原因、可选补一句说明。取消 / Esc 返回 null
-export function reportDialog({ term = '', meaning = '' } = {}) {
+// 词条报错 / 修正：
+//   editable —— 把单词与释义做成输入框，用户改完保存，词条立即更新；
+//   否则     —— 只读列出当前词条（免得报到别的词上），只能选原因提交。
+// 取消 / Esc 返回 null；editable 时返回 { term, meaning, reason, note }，
+// 否则返回 { reason, note }
+export function reportDialog({ term = '', meaning = '', editable = false } = {}) {
     return new Promise(resolve => {
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
@@ -293,38 +297,86 @@ export function reportDialog({ term = '', meaning = '' } = {}) {
 
         const heading = document.createElement('h4');
         heading.className = 'modal-title';
-        heading.textContent = '⚠️ 报错';
+        heading.textContent = editable ? '✏️ 修正词条' : '⚠️ 报错';
 
         const text = document.createElement('p');
         text.className = 'modal-text tight';
-        text.textContent = '这个单词或释义有问题？选一个原因提交，我会去核对。';
+        text.textContent = editable
+            ? '这个单词或释义不对？直接改成正确的，保存后立即生效。'
+            : '这个单词或释义有问题？选一个原因提交，我会去核对。';
 
-        const quote = document.createElement('div');
-        quote.className = 'report-quote';
+        box.append(heading, text);
 
-        const quoteTerm = document.createElement('div');
-        quoteTerm.className = 'report-quote-term';
-        quoteTerm.textContent = term || '（没有单词）';
+        // 可编辑时用输入框替掉只读引用；两个字段一起给，改单词还是改释义都行
+        let termInput = null;
+        let meaningInput = null;
 
-        const quoteMeaning = document.createElement('div');
-        quoteMeaning.className = 'report-quote-meaning';
-        quoteMeaning.textContent = meaning || '（没有释义）';
+        if (editable) {
+            termInput = document.createElement('input');
+            termInput.type = 'text';
+            termInput.maxLength = 200;
+            termInput.value = term;
+            termInput.setAttribute('aria-label', '单词');
 
-        quote.append(quoteTerm, quoteMeaning);
+            const termLabel = document.createElement('label');
+            termLabel.textContent = '单词';
+            const termGroup = document.createElement('div');
+            termGroup.className = 'form-group report-field';
+            termGroup.append(termLabel, termInput);
 
-        let reason = REPORT_REASONS[0];
+            meaningInput = document.createElement('textarea');
+            meaningInput.maxLength = 500;
+            meaningInput.value = meaning;
+            meaningInput.setAttribute('aria-label', '释义');
+
+            const meaningLabel = document.createElement('label');
+            meaningLabel.textContent = '释义';
+            const meaningGroup = document.createElement('div');
+            meaningGroup.className = 'form-group report-field';
+            meaningGroup.append(meaningLabel, meaningInput);
+
+            box.append(termGroup, meaningGroup);
+        } else {
+            const quote = document.createElement('div');
+            quote.className = 'report-quote';
+
+            const quoteTerm = document.createElement('div');
+            quoteTerm.className = 'report-quote-term';
+            quoteTerm.textContent = term || '（没有单词）';
+
+            const quoteMeaning = document.createElement('div');
+            quoteMeaning.className = 'report-quote-meaning';
+            quoteMeaning.textContent = meaning || '（没有释义）';
+
+            quote.append(quoteTerm, quoteMeaning);
+            box.appendChild(quote);
+        }
+
+        // 直接改的时候原因只是备注，可以不选；只报错就必须选一个
+        let reason = editable ? '' : REPORT_REASONS[0];
+
+        const reasonHint = document.createElement('p');
+        reasonHint.className = 'modal-text tight';
+        reasonHint.textContent = editable ? '原因（可不选，方便我核对）' : '选一个原因：';
+        box.appendChild(reasonHint);
 
         const chips = document.createElement('div');
         chips.className = 'report-reasons';
 
-        REPORT_REASONS.forEach((label, index) => {
+        REPORT_REASONS.forEach(label => {
             const chip = document.createElement('button');
             chip.type = 'button';
-            chip.className = `preset-chip${index === 0 ? ' active' : ''}`;
+            chip.className = `preset-chip${!editable && label === reason ? ' active' : ''}`;
             chip.textContent = label;
             chip.addEventListener('click', () => {
-                reason = label;
-                [...chips.children].forEach(item => item.classList.toggle('active', item === chip));
+                // 再点一下取消选中；「报错」必须留一个，所以那时不允许取消
+                if (reason === label) {
+                    if (!editable) return;
+                    reason = '';
+                } else {
+                    reason = label;
+                }
+                [...chips.children].forEach(item => item.classList.toggle('active', item.textContent === reason));
             });
             chips.appendChild(chip);
         });
@@ -332,8 +384,11 @@ export function reportDialog({ term = '', meaning = '' } = {}) {
         const note = document.createElement('textarea');
         note.className = 'report-note';
         note.maxLength = 500;
-        note.placeholder = '补充说明（可不填）：正确释义、错在哪里…';
+        note.placeholder = editable ? '补充说明（可不填）' : '补充说明（可不填）：正确释义、错在哪里…';
         note.setAttribute('aria-label', '补充说明');
+
+        const message = document.createElement('div');
+        message.className = 'form-message';
 
         const actions = document.createElement('div');
         actions.className = 'modal-actions';
@@ -346,10 +401,10 @@ export function reportDialog({ term = '', meaning = '' } = {}) {
         const ok = document.createElement('button');
         ok.type = 'button';
         ok.className = 'btn-primary';
-        ok.textContent = '提交报错';
+        ok.textContent = editable ? '保存修改' : '提交报错';
 
         actions.append(cancel, ok);
-        box.append(heading, text, quote, chips, note, actions);
+        box.append(chips, note, message, actions);
         overlay.appendChild(box);
         document.body.appendChild(overlay);
 
@@ -364,15 +419,38 @@ export function reportDialog({ term = '', meaning = '' } = {}) {
             if (event.key === 'Escape') close(null);
         }
 
+        function submit() {
+            if (editable) {
+                const nextTerm = termInput.value.trim();
+                if (!nextTerm) return showFormMessage(message, '单词不能为空', 'error');
+                close({
+                    term: nextTerm,
+                    meaning: meaningInput.value.trim(),
+                    reason,
+                    note: note.value.trim()
+                });
+                return;
+            }
+
+            close({ reason, note: note.value.trim() });
+        }
+
         cancel.addEventListener('click', () => close(null));
-        ok.addEventListener('click', () => close({ reason, note: note.value.trim() }));
+        ok.addEventListener('click', submit);
         overlay.addEventListener('click', event => {
             if (event.target === overlay) close(null);
         });
         document.addEventListener('keydown', onKey);
 
         requestAnimationFrame(() => overlay.classList.add('show'));
-        ok.focus();
+
+        // 改词条时把光标放到释义末尾（多数情况下坏的就是释义），否则焦点给主按钮
+        if (editable) {
+            meaningInput.focus();
+            meaningInput.setSelectionRange(meaningInput.value.length, meaningInput.value.length);
+        } else {
+            ok.focus();
+        }
     });
 }
 

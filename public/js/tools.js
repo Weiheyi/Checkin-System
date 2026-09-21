@@ -908,13 +908,14 @@ function renderWordList() {
         const report = document.createElement('button');
         report.type = 'button';
         report.className = 'report-btn';
-        report.textContent = '报错';
-        report.setAttribute('aria-label', `报告单词 ${word.term} 的释义问题`);
-        report.addEventListener('click', () => reportWord({
+        report.textContent = '修正';
+        report.setAttribute('aria-label', `修正单词 ${word.term} 的拼写或释义`);
+        report.addEventListener('click', () => fixWord({
             word,
             term: word.term,
             meaning: word.meaning,
-            source: 'list'
+            source: 'list',
+            refresh: renderWordList
         }));
 
         const del = document.createElement('button');
@@ -1238,42 +1239,88 @@ function makeSpeakButton(text) {
     return btn;
 }
 
-/* ---------------- 词条报错 ---------------- */
+/* ---------------- 词条报错 / 修正 ---------------- */
 
 // 当前打开的单词本；字典查词不属于任何本子，调用方显式传 bookId: null
 function currentBookId() {
     return wordsState.current ? wordsState.current.id : null;
 }
 
-// 释义来自导入的原文与内置词典，中英切分难免出错，让用户能直接标出来。
-// 只提交不读回，站长在 Supabase 后台的 word_reports 表里统一核对
-async function reportWord({ word, term, meaning, source, bookId = currentBookId() }) {
-    const result = await reportDialog({ term, meaning });
+// 词条有问题时让用户自己改：保存后写回 words（服务端同时同步该词历史背诵明细），
+// 立即生效；字典里的词不属于 words 表，只能像以前那样报错。
+// refresh 由各入口传入，改完只刷新当前那一处视图
+async function fixWord({ word, term, meaning, source, bookId = currentBookId(), refresh }) {
+    const editable = !!(word && word.id);
+    const result = await reportDialog({ term, meaning, editable });
     if (!result) return;
 
-    try {
-        await api.wordReports.create({
-            wordId: word ? word.id : null,
-            bookId,
-            term,
-            meaning,
-            reason: result.reason,
-            note: result.note,
-            source
-        });
-        toast('已报错，谢谢你帮忙核对', 'success');
-    } catch (err) {
-        toast(err.message, 'error');
+    // 字典：静态只读数据，改不了，照旧只提交报错
+    if (!editable) {
+        try {
+            await api.wordReports.create({
+                wordId: null,
+                bookId: null,
+                term,
+                meaning,
+                reason: result.reason,
+                note: result.note,
+                source
+            });
+            toast('已报错，谢谢你帮忙核对', 'success');
+        } catch (err) {
+            toast(err.message, 'error');
+        }
+        return;
+    }
+
+    const nextTerm = result.term;
+    const nextMeaning = result.meaning;
+    const changed = nextTerm !== term || nextMeaning !== meaning;
+
+    if (changed) {
+        try {
+            await api.wordbooks.updateWord(word.id, { term: nextTerm, meaning: nextMeaning });
+        } catch (err) {
+            return toast(err.message, 'error');
+        }
+
+        // 列表 / 背诵 / 考核 / 灭错共用同一个词条对象，原地改字段就能全站生效
+        word.term = nextTerm;
+        word.meaning = nextMeaning;
+    }
+
+    // 改了内容或选了原因才留记录；两者都没有就是纯粹没动，不必写
+    if (changed || result.reason) {
+        try {
+            await api.wordReports.create({
+                wordId: word.id,
+                bookId,
+                term: nextTerm,
+                meaning: nextMeaning,
+                reason: result.reason || '用户自行修正',
+                note: result.note,
+                source
+            });
+        } catch {
+            /* 忽略：只是留给站长核对的轨迹，记录失败不影响已生效的修改 */
+        }
+    }
+
+    if (changed) {
+        toast('已更新词条', 'success');
+        if (refresh) refresh();
+    } else {
+        toast('没有改动', 'info');
     }
 }
 
-// 答题反馈区里的小号报错入口
-function makeReportLink(entry) {
+// 答题反馈区里的小号修正入口
+function makeFixLink(entry, refresh) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'report-link';
-    btn.textContent = '⚠️ 这个释义有问题？报错';
-    btn.addEventListener('click', () => reportWord(entry));
+    btn.textContent = '✏️ 这个释义不对？点这里改';
+    btn.addEventListener('click', () => fixWord({ ...entry, refresh }));
     return btn;
 }
 
@@ -1337,6 +1384,17 @@ function revealStudy() {
     els.studyActions.hidden = false;
     els.studyReportRow.hidden = false;
     els.studyCard.classList.add('revealed');
+}
+
+// 改完词条只换卡片上的单词/释义与音标。不能走 renderStudy()：
+// 那会把「已翻开」重置掉，用户刚改完就得重新点开一次
+function refreshStudyCard() {
+    const word = currentStudyWord();
+    if (!word) return;
+
+    els.studyTerm.textContent = word.term;
+    els.studyMeaning.textContent = word.meaning || '（没有释义）';
+    paintStudyPhonetic();
 }
 
 function markStudy(mark) {
@@ -1595,38 +1653,41 @@ function updateQuizHint() {
     els.quizSetupHint.textContent = notes.join(' ');
 }
 
+// 由词条现场生成一道题；改完词条后也能拿它重建当前题目（answer / options 是构建时的
+// 字符串拷贝，光改 word 对象不会跟着变）
+function makeQuizQuestion(word) {
+    if (quiz.type === 'spell') {
+        return { word, kind: 'spell', prompt: word.meaning, sub: '根据释义拼写单词', answer: word.term };
+    }
+    if (quiz.type === 'meaning') {
+        return { word, kind: 'meaning', prompt: word.term, sub: '写出这个单词的中文意思', answer: word.meaning };
+    }
+
+    const byTerm = quiz.dir === 'term';
+    const answer = byTerm ? word.meaning : word.term;
+    const field = byTerm ? 'meaning' : 'term';
+    // 干扰项从整本书里取，选项才不至于过于集中
+    const usable = wordsState.words.filter(w => w.term && w.meaning);
+    const distractors = shuffle(usable.filter(w => w.id !== word.id && w[field] !== answer))
+        .slice(0, 3)
+        .map(w => w[field]);
+
+    return {
+        word,
+        kind: 'choice',
+        prompt: byTerm ? word.term : word.meaning,
+        sub: byTerm ? '选择正确的释义' : '选择正确的单词',
+        answer,
+        options: shuffle([answer, ...distractors])
+    };
+}
+
 function buildQuizQuestions() {
     const pool = quizPool();
-    // 干扰项从整本书里取，选项才不至于过于集中
-    const usable = wordsState.words.filter(word => word.term && word.meaning);
-    if (!pool.length || !usable.length) return [];
+    if (!pool.length) return [];
 
     const picked = shuffle(pool.slice()).slice(0, quizLimit(pool.length));
-
-    return picked.map(word => {
-        if (quiz.type === 'spell') {
-            return { word, kind: 'spell', prompt: word.meaning, sub: '根据释义拼写单词', answer: word.term };
-        }
-        if (quiz.type === 'meaning') {
-            return { word, kind: 'meaning', prompt: word.term, sub: '写出这个单词的中文意思', answer: word.meaning };
-        }
-
-        const byTerm = quiz.dir === 'term';
-        const answer = byTerm ? word.meaning : word.term;
-        const field = byTerm ? 'meaning' : 'term';
-        const distractors = shuffle(usable.filter(w => w.id !== word.id && w[field] !== answer))
-            .slice(0, 3)
-            .map(w => w[field]);
-
-        return {
-            word,
-            kind: 'choice',
-            prompt: byTerm ? word.term : word.meaning,
-            sub: byTerm ? '选择正确的释义' : '选择正确的单词',
-            answer,
-            options: shuffle([answer, ...distractors])
-        };
-    });
+    return picked.map(makeQuizQuestion);
 }
 
 function startQuiz() {
@@ -1773,6 +1834,9 @@ function commitQuizAnswer(question, correct, given) {
 }
 
 function renderAnswerFeedback(question, correct, timedOut = false) {
+    // 记下这次是怎么画的，改完词条要照原样重画（见 refreshQuizWord）
+    quiz.lastRender = { correct, timedOut };
+
     els.quizCountdown.hidden = true;
     els.quizFeedback.hidden = false;
     els.quizFeedback.className = `quiz-feedback ${correct ? 'ok' : 'no'}`;
@@ -1798,12 +1862,12 @@ function renderAnswerFeedback(question, correct, timedOut = false) {
         els.quizFeedback.appendChild(phonetic);
     }
     els.quizFeedback.appendChild(makeSpeakButton(question.word.term));
-    els.quizFeedback.appendChild(makeReportLink({
+    els.quizFeedback.appendChild(makeFixLink({
         word: question.word,
         term: question.word.term,
         meaning: question.word.meaning,
         source: 'quiz'
-    }));
+    }, refreshQuizWord));
 
     renderQuizProgress();
 
@@ -1813,6 +1877,20 @@ function renderAnswerFeedback(question, correct, timedOut = false) {
     els.quizNext.hidden = false;
     els.quizNext.textContent = quiz.index + 1 >= quiz.questions.length ? '查看结果' : '下一题';
     els.quizNext.focus();
+}
+
+// 反馈区里改完词条：按新词重算当前题目，再照原来的判定重画反馈
+// （题干与「正确答案」都是构建时的字符串，不重算会停在旧释义上）
+function refreshQuizWord() {
+    const question = quiz.questions[quiz.index];
+    if (!question || !question.word) return;
+
+    Object.assign(question, makeQuizQuestion(question.word));
+    els.quizPrompt.textContent = question.prompt;
+    els.quizSub.textContent = question.sub;
+
+    const last = quiz.lastRender || { correct: false, timedOut: false };
+    renderAnswerFeedback(question, last.correct, last.timedOut);
 }
 
 // 填义被自动判错后点「我答对了」：这里只翻转判定，不记分，
@@ -2146,6 +2224,9 @@ function commitElimAnswer(question, correct) {
 function renderElimFeedback(question, correct) {
     const word = question.word;
 
+    // 记下这次是怎么画的，改完词条要照原样重画（见 refreshElimWord）
+    elim.lastRender = { correct };
+
     els.wrongFeedback.hidden = false;
     els.wrongFeedback.className = `quiz-feedback ${correct ? 'ok' : 'no'}`;
     els.wrongFeedback.replaceChildren();
@@ -2167,12 +2248,12 @@ function renderElimFeedback(question, correct) {
         els.wrongFeedback.appendChild(phonetic);
     }
     els.wrongFeedback.appendChild(makeSpeakButton(word.term));
-    els.wrongFeedback.appendChild(makeReportLink({
+    els.wrongFeedback.appendChild(makeFixLink({
         word,
         term: word.term,
         meaning: word.meaning,
         source: 'elim'
-    }));
+    }, refreshElimWord));
 
     els.wrongOverride.hidden = !pending;
     els.wrongOverride.textContent = pending && pending.correct ? '点错了，改回算错' : '我答对了，算对';
@@ -2180,6 +2261,19 @@ function renderElimFeedback(question, correct) {
     els.wrongNext.hidden = false;
     els.wrongNext.textContent = elim.queue.length ? '下一题' : '查看结果';
     els.wrongNext.focus();
+}
+
+// 反馈区里改完词条：按新词重建当前题目，再照原来的判定重画反馈
+function refreshElimWord() {
+    const word = elim.queue[0];
+    if (!word) return;
+
+    elim.current = buildElimQuestion(word);
+    els.wrongPrompt.textContent = elim.current.prompt;
+    els.wrongSub.textContent = elim.current.sub;
+
+    const last = elim.lastRender || { correct: false };
+    renderElimFeedback(elim.current, last.correct);
 }
 
 // 填义被自动判错后点「我答对了」：只翻转判定，点错了再点一次就改回去
@@ -2944,12 +3038,12 @@ function renderDictResult() {
     add.addEventListener('click', () => addDictWordToBook(add, raw, meaningLines(meaning).join('；')));
     actions.appendChild(add);
 
-    // 查到的释义来自内置词典，不属于任何单词本
+    // 查到的释义来自内置词典，不属于任何单词本，改不了，只能报错
     const report = document.createElement('button');
     report.type = 'button';
     report.className = 'btn-ghost';
     report.textContent = '⚠️ 报错';
-    report.addEventListener('click', () => reportWord({
+    report.addEventListener('click', () => fixWord({
         word: null,
         bookId: null,
         term: raw,
@@ -3412,7 +3506,14 @@ function bindEvents() {
 
     els.studyReport.addEventListener('click', () => {
         const word = currentStudyWord();
-        if (word) reportWord({ word, term: word.term, meaning: word.meaning, source: 'study' });
+        if (!word) return;
+        fixWord({
+            word,
+            term: word.term,
+            meaning: word.meaning,
+            source: 'study',
+            refresh: refreshStudyCard
+        });
     });
 
     // 考核

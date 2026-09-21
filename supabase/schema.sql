@@ -201,6 +201,8 @@ create index if not exists words_book_pos_idx          on public.words(book_id, 
 create index if not exists study_sessions_user_idx     on public.study_sessions(user_id, created_at desc);
 create index if not exists study_logs_session_idx      on public.study_logs(session_id);
 create index if not exists study_logs_user_idx         on public.study_logs(user_id, created_at desc);
+-- 用户自己改词条时要按 word_id 批量同步历史明细的 term / meaning
+create index if not exists study_logs_word_idx         on public.study_logs(word_id);
 create index if not exists vocab_tests_user_idx        on public.vocab_tests(user_id, created_at desc);
 create index if not exists feedback_user_idx          on public.feedback(user_id, created_at desc);
 
@@ -576,6 +578,39 @@ begin
   return next rec;
 end; $$;
 
+-- 用户自行修正词条：改单词 / 释义，并把该词历史背诵明细里的冗余快照一起更新。
+-- 一次事务完成，避免「词条改了、历史没改」这种半截状态。
+create or replace function public.update_word(
+  p_word_id uuid,
+  p_term text,
+  p_meaning text
+) returns setof public.words
+language plpgsql security definer set search_path = public as $$
+declare
+  me uuid := auth.uid();
+  rec public.words;
+  t text := btrim(coalesce(p_term, ''));
+begin
+  if me is null then raise exception '请先登录'; end if;
+  if t = '' then raise exception '单词不能为空'; end if;
+
+  update public.words
+     set term = t,
+         meaning = btrim(coalesce(p_meaning, ''))
+   where id = p_word_id and user_id = me
+   returning * into rec;
+
+  if not found then raise exception '单词不存在或不属于当前用户'; end if;
+
+  -- 历史明细里的 term / meaning 是冗余快照，跟着一起改，记录页才不会新旧对不上
+  update public.study_logs
+     set term = rec.term,
+         meaning = rec.meaning
+   where user_id = me and word_id = rec.id;
+
+  return next rec;
+end; $$;
+
 -- ============================================================
 -- 六、函数权限：只允许已登录用户调用
 -- ============================================================
@@ -587,6 +622,7 @@ revoke all on function public.friend_feed(int)             from public, anon;
 revoke all on function public.my_stats()                   from public, anon;
 revoke all on function public.start_study_session(text, uuid, text, int) from public, anon;
 revoke all on function public.record_word_review(uuid, uuid, text)       from public, anon;
+revoke all on function public.update_word(uuid, text, text)              from public, anon;
 
 grant execute on function public.are_friends(uuid, uuid)   to authenticated;
 grant execute on function public.can_view_checkin(uuid)    to authenticated;
@@ -596,6 +632,7 @@ grant execute on function public.friend_feed(int)          to authenticated;
 grant execute on function public.my_stats()                to authenticated;
 grant execute on function public.start_study_session(text, uuid, text, int) to authenticated;
 grant execute on function public.record_word_review(uuid, uuid, text)       to authenticated;
+grant execute on function public.update_word(uuid, text, text)              to authenticated;
 
 -- ============================================================
 -- 七、Storage：自定义头像与背景图
