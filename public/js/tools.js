@@ -406,6 +406,45 @@ function parseWordList(text, { swap = false } = {}) {
     return list;
 }
 
+/* ---------------- 缺释义的词用内置词典补齐 ---------------- */
+
+// 导入的单词表里没写中文释义的词，从内置离线词典里补一条；
+// 自己带了释义的（哪怕只有「n.」这种残缺内容）一律保持原样，绝不用词典覆盖上传的内容。
+// 返回补上的条数。一个都不缺就直接返回 —— 不能为了保险去加载那 3MB 的词典。
+async function fillMissingMeanings(list) {
+    const missing = item => item && item.term && !String(item.meaning || '').trim();
+    if (!list.some(missing)) return 0;
+
+    // 词典加载失败就当没有释义：顶多补不了，不能因此把导入拦下来
+    try {
+        await loadDictionary();
+    } catch {
+        return 0;
+    }
+
+    let filled = 0;
+
+    for (const item of list) {
+        if (!missing(item)) continue;
+
+        const senses = meaningLines(meaningOf(item.term));
+        if (!senses.length) continue;
+
+        // 多义项压成一行存，跟字典页「加入生词本」的写法保持一致
+        item.meaning = senses.join('；');
+        filled += 1;
+    }
+
+    return filled;
+}
+
+// 「识别到 N 个单词」；词典补过释义再补一句，让用户知道这些释义是哪儿来的
+function setParsedCount(el, list, filled = 0) {
+    el.textContent = filled
+        ? `识别到 ${list.length} 个单词 · 已用词典补上 ${filled} 条释义`
+        : `识别到 ${list.length} 个单词`;
+}
+
 /* ---------------- 单词排列与分页 ---------------- */
 
 // 字母序：忽略大小写，数字按数值比（unit 9 排在 unit 10 前面）
@@ -725,14 +764,23 @@ function openImport() {
     els.bookName.focus();
 }
 
-function refreshImport() {
-    wordsState.parsed = arrangeParsed(
+async function refreshImport() {
+    const list = arrangeParsed(
         parseWordList(els.bookText.value, { swap: wordsState.swap }),
         wordsState.importSort
     );
-    els.importCount.textContent = `识别到 ${wordsState.parsed.length} 个单词`;
-    els.importSave.disabled = wordsState.parsed.length === 0;
-    if (!els.wordPreview.hidden) renderPreview(els.wordPreview, wordsState.parsed);
+    wordsState.parsed = list;
+    setParsedCount(els.importCount, list);
+    els.importSave.disabled = list.length === 0;
+    if (!els.wordPreview.hidden) renderPreview(els.wordPreview, list);
+
+    // 解析结果先上屏；词典是异步的，补完再刷一次数量和预览
+    const filled = await fillMissingMeanings(list);
+    // 等词典这会儿用户又改了内容，就以新的那次为准
+    if (!filled || wordsState.parsed !== list) return;
+
+    setParsedCount(els.importCount, list, filled);
+    if (!els.wordPreview.hidden) renderPreview(els.wordPreview, list);
 }
 
 async function saveImport() {
@@ -742,6 +790,9 @@ async function saveImport() {
     const name = els.bookName.value.trim() || '未命名单词本';
     setLoading(els.importSave, true);
     try {
+        // 用户可能在词典还没加载完时就点了保存，这里再兜一次底（全都带释义时不碰词典）
+        await fillMissingMeanings(words);
+
         const { book } = await api.wordbooks.create({ name, words });
         wordsState.books.unshift(book);
         renderBooks();
@@ -1170,14 +1221,22 @@ function openAddWords() {
     els.addText.focus();
 }
 
-function refreshAdd() {
-    wordsState.addParsed = arrangeParsed(
+async function refreshAdd() {
+    const list = arrangeParsed(
         parseWordList(els.addText.value, { swap: false }),
         wordsState.addSort
     );
-    els.addCount.textContent = `识别到 ${wordsState.addParsed.length} 个单词`;
-    els.addSave.disabled = wordsState.addParsed.length === 0;
-    if (!els.addPreview.hidden) renderPreview(els.addPreview, wordsState.addParsed);
+    wordsState.addParsed = list;
+    setParsedCount(els.addCount, list);
+    els.addSave.disabled = list.length === 0;
+    if (!els.addPreview.hidden) renderPreview(els.addPreview, list);
+
+    // 与新建单词本同一套规则：缺释义的从内置词典补，写了的原样保留
+    const filled = await fillMissingMeanings(list);
+    if (!filled || wordsState.addParsed !== list) return;
+
+    setParsedCount(els.addCount, list, filled);
+    if (!els.addPreview.hidden) renderPreview(els.addPreview, list);
 }
 
 async function saveAddWords() {
@@ -1186,6 +1245,9 @@ async function saveAddWords() {
 
     setLoading(els.addSave, true);
     try {
+        // 同上：词典是异步加载的，保存前再确认一次缺的释义都补齐了
+        await fillMissingMeanings(words);
+
         const { words: inserted } = await api.wordbooks.addWords(wordsState.current.id, words);
         wordsState.words.push(...inserted);
         wordsState.current.wordCount = wordsState.words.length;
