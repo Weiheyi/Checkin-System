@@ -64,34 +64,39 @@ function loadTesseract() {
 const OCR_STATUS = {
     'loading tesseract core': '加载识别核心…',
     'initializing tesseract': '初始化识别引擎…',
-    'loading language traineddata': '加载中文识别包…',
+    'loading language traineddata': '加载识别包…',
     'initializing api': '准备识别…',
     'recognizing text': '识别文字中'
 };
 
-let ocrWorkerPromise = null;
-function getOcrWorker() {
-    if (!ocrWorkerPromise) {
-        ocrWorkerPromise = (async () => {
-            say('正在加载 OCR 引擎（首次约 4MB）…');
+const OCR_LANG_LABEL = { chi_sim: '中文', eng: '英文' };
+
+// 每种语言各缓存一个 worker：单词表用 chi_sim（本身含拉丁字母），错题本截图用 eng
+const ocrWorkers = new Map();
+
+function getOcrWorker(lang = 'chi_sim') {
+    if (!ocrWorkers.has(lang)) {
+        const promise = (async () => {
+            const label = OCR_LANG_LABEL[lang] || lang;
+            say(`正在加载 OCR 引擎（${label}，首次约 4MB）…`);
             const Tesseract = await loadTesseract();
-            const worker = await Tesseract.createWorker('chi_sim', 1, {
+            const worker = await Tesseract.createWorker(lang, 1, {
                 workerPath: vendor('tesseract-worker.min.js'),
                 corePath: vendor('tesseract-core-simd-lstm.wasm.js'),
                 langPath: vendor('tesseract-lang/'),
                 gzip: false,
                 logger: msg => {
                     if (!msg || !msg.status) return;
-                    const label = OCR_STATUS[msg.status] || msg.status;
+                    const text = OCR_STATUS[msg.status] || msg.status;
                     if (msg.status === 'recognizing text' && typeof msg.progress === 'number') {
-                        say(`${label} ${Math.round(msg.progress * 100)}%`);
+                        say(`${text} ${Math.round(msg.progress * 100)}%`);
                     } else {
-                        say(`${label}…`);
+                        say(`${text}…`);
                     }
                 }
             });
 
-            // 单词表是整齐的文本块，单块版面模式比默认的自动分栏更准
+            // 单词表 / 题目都是整齐的文本块，单块版面模式比默认的自动分栏更准
             await worker.setParameters({
                 tessedit_pageseg_mode: '6',
                 preserve_interword_spaces: '1'
@@ -99,11 +104,30 @@ function getOcrWorker() {
 
             return worker;
         })().catch(err => {
-            ocrWorkerPromise = null;
+            ocrWorkers.delete(lang);
+            if (lang === 'eng') {
+                throw new Error('英文识别包不可用，请把 eng.traineddata 放进 public/vendor/tesseract-lang/');
+            }
             throw err;
         });
+
+        ocrWorkers.set(lang, promise);
     }
-    return ocrWorkerPromise;
+    return ocrWorkers.get(lang);
+}
+
+// 识别一张图片里的文字；lang 决定用哪个识别包（默认中文，含拉丁字母）
+export async function ocrImage(file, { lang = 'chi_sim', onStatus } = {}) {
+    if (onStatus) statusSink = onStatus;
+
+    const worker = await getOcrWorker(lang);
+    say('识别图片中的文字…');
+    const { data } = await worker.recognize(file);
+
+    if (!data.text || !data.text.trim()) {
+        throw new Error('没有从图片里识别出文字，换一张更清晰、文字更大的图试试');
+    }
+    return data.text;
 }
 
 /* ---------------- PDF ---------------- */
@@ -339,14 +363,7 @@ async function extractLegacyDoc(file) {
 /* ---------------- 图片 ---------------- */
 
 async function extractImage(file) {
-    const worker = await getOcrWorker();
-    say('识别图片中的文字…');
-    const { data } = await worker.recognize(file);
-
-    if (!data.text || !data.text.trim()) {
-        throw new Error('没有从图片里识别出文字，换一张更清晰、文字更大的图试试');
-    }
-    return { text: data.text };
+    return { text: await ocrImage(file, { lang: 'chi_sim' }) };
 }
 
 /* ---------------- 对外入口 ---------------- */

@@ -66,6 +66,11 @@
                     <span class="tool-name">词汇量测试</span>
                     <span class="tool-desc">估一估现在认识多少词</span>
                 </button>
+                <button type="button" class="tool-card" data-tool="mistakes">
+                    <span class="tool-icon">📕</span>
+                    <span class="tool-name">错题本</span>
+                    <span class="tool-desc">截图识别、按卷归类错题</span>
+                </button>
             </div>
         </div>
 
@@ -509,6 +514,140 @@
 
             <!-- 视图：结果（整块由 js/vocab.js 渲染） -->
             <div id="vocabResult" hidden></div>
+        </section>
+
+        <!-- ========== 错题本 ========== -->
+        <section class="card tool-panel hidden" id="panel-mistakes">
+
+            <!-- 视图：错题本列表 -->
+            <div id="mkHome">
+                <div class="card-title-row">
+                    <h3 class="card-title">📕 错题本</h3>
+                    <div class="title-actions">
+                        <button class="btn-ghost" id="mkCategoriesBtn" type="button">🏷 题型管理</button>
+                        <button class="btn-primary" id="mkNewBookBtn" type="button">＋ 新建错题本</button>
+                    </div>
+                </div>
+                <p class="setting-desc">
+                    把做错的题截图传进来，自动识别卷名与题目，按卷归类整理；题型（如 Craft and Structure）可以自己增删改。
+                </p>
+                <div class="book-list" id="mkBookList"></div>
+                <p class="empty-hint" id="mkBookEmpty"></p>
+            </div>
+
+            <!-- 视图：错题本详情 -->
+            <div id="mkBook" hidden>
+                <div class="card-title-row">
+                    <h3 class="card-title" id="mkBookTitle">错题本</h3>
+                    <div class="title-actions">
+                        <button class="btn-ghost" id="mkBookBack" type="button">← 全部错题本</button>
+                        <button class="btn-primary" id="mkImportBtn" type="button">＋ 导入错题</button>
+                    </div>
+                </div>
+                <div class="word-stats" id="mkStats"></div>
+                <div class="filter-row" id="mkCategoryFilter"></div>
+                <div class="filter-row" id="mkPaperFilter"></div>
+                <div id="mkQuestionList"></div>
+                <p class="empty-hint" id="mkQuestionEmpty"></p>
+            </div>
+
+            <!-- 视图：导入 / 编辑 -->
+            <div id="mkForm" hidden>
+                <div class="card-title-row">
+                    <h3 class="card-title" id="mkFormTitle">导入错题</h3>
+                    <div class="title-actions">
+                        <button class="btn-ghost" id="mkFormCancel" type="button">取消</button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>题目截图（可选，上传后自动识别）</label>
+                    <div class="upload-row">
+                        <button class="btn-ghost" id="mkScreenshotBtn" type="button">上传截图 / 拖到此处</button>
+                        <input type="file" id="mkScreenshot" accept="image/*" hidden>
+                    </div>
+                    <div class="upload-status" id="mkScreenshotStatus" hidden></div>
+                    <div class="mk-shot-preview" id="mkShotPreview" hidden></div>
+                </div>
+
+                <div class="mk-form-grid">
+                    <div class="form-group">
+                        <label for="mkPaper">卷名</label>
+                        <input type="text" id="mkPaper" class="text-input" list="mkPaperOptions"
+                               autocomplete="off" placeholder="如 2026年9月国际B卷">
+                        <datalist id="mkPaperOptions"></datalist>
+                    </div>
+                    <div class="form-group">
+                        <label for="mkNumber">题号</label>
+                        <input type="text" id="mkNumber" class="text-input" autocomplete="off" placeholder="如 2">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="mkCategory">题型</label>
+                    <div class="task-input-wrapper">
+                        <select id="mkCategory" class="text-input select-input"></select>
+                        <button class="btn-ghost" id="mkAddCategoryBtn" type="button">＋ 新建题型</button>
+                    </div>
+                    <div class="task-input-wrapper" id="mkCategoryInline" hidden>
+                        <input type="text" id="mkCategoryInlineInput" class="task-input"
+                               autocomplete="off" placeholder="新题型名称">
+                        <button class="btn-primary" id="mkCategoryInlineOk" type="button">确定</button>
+                        <button class="btn-ghost" id="mkCategoryInlineCancel" type="button">取消</button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="mkStem">题干</label>
+                    <textarea id="mkStem" rows="4" placeholder="题目原文"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>选项</label>
+                    <div class="mk-options" id="mkOptions"></div>
+                </div>
+
+                <div class="mk-form-grid">
+                    <div class="form-group">
+                        <label for="mkAnswer">正确答案</label>
+                        <input type="text" id="mkAnswer" class="text-input" autocomplete="off" placeholder="如 C">
+                    </div>
+                    <div class="form-group">
+                        <label for="mkMyAnswer">我的答案（可选）</label>
+                        <input type="text" id="mkMyAnswer" class="text-input" autocomplete="off" placeholder="如 A">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="mkAnalysis">解析（可选）</label>
+                    <textarea id="mkAnalysis" rows="3" placeholder="错因 / 正确思路"></textarea>
+                </div>
+
+                <div class="timer-actions">
+                    <button class="btn-primary" id="mkSave" type="button">保存</button>
+                    <button class="btn-ghost" id="mkSaveNext" type="button">保存并继续下一题</button>
+                </div>
+            </div>
+
+            <!-- 视图：题型管理 -->
+            <div id="mkCategories" hidden>
+                <div class="card-title-row">
+                    <h3 class="card-title">🏷 题型管理</h3>
+                    <div class="title-actions">
+                        <button class="btn-ghost" id="mkCategoriesBack" type="button">← 返回</button>
+                    </div>
+                </div>
+                <p class="setting-desc">
+                    这里是你自己的题型标签（如 Craft and Structure）。新建、改名、删除都只影响你自己的错题。
+                </p>
+                <div class="task-input-wrapper">
+                    <input type="text" id="mkNewCategory" class="task-input" autocomplete="off"
+                           placeholder="新建题型，如 Vocabulary in Context">
+                    <button class="btn-primary" id="mkAddCategory" type="button">添加</button>
+                </div>
+                <div class="book-list" id="mkCategoryList"></div>
+                <p class="empty-hint" id="mkCategoryEmpty"></p>
+            </div>
         </section>
     </div>
 

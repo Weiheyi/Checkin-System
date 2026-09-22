@@ -573,6 +573,54 @@ function cleanForumImages(images) {
     return list;
 }
 
+function mapMistakeBook(row) {
+    const embedded = row.mistake_questions && row.mistake_questions[0];
+    return {
+        id: row.id,
+        name: row.name,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at || null,
+        questionCount: embedded ? Number(embedded.count) : 0
+    };
+}
+
+function mapMistakeCategory(row) {
+    return {
+        id: row.id,
+        name: row.name,
+        sort: row.sort || 0,
+        createdAt: row.created_at
+    };
+}
+
+function mapMistakeQuestion(row) {
+    return {
+        id: row.id,
+        bookId: row.book_id,
+        categoryId: row.category_id || null,
+        paper: row.paper || '',
+        number: row.number || '',
+        stem: row.stem || '',
+        options: Array.isArray(row.options) ? row.options : [],
+        answer: row.answer || '',
+        myAnswer: row.my_answer || '',
+        analysis: row.analysis || '',
+        images: Array.isArray(row.images) ? row.images : [],
+        createdAt: row.created_at
+    };
+}
+
+// 选项统一成 [{label,text}]，只保留有内容的
+function cleanMistakeOptions(options) {
+    const list = Array.isArray(options) ? options : [];
+    return list
+        .map(item => ({
+            label: String((item && item.label) || '').trim().toUpperCase(),
+            text: String((item && item.text) || '').trim()
+        }))
+        .filter(item => item.label || item.text);
+}
+
 export const api = {
     async register({ email, nickname, password }) {
         const { data, error } = await supabase.auth.signUp({
@@ -1698,6 +1746,203 @@ export const api = {
             if (error) fail(error.message, 500);
             return {};
         }
+    },
+
+    // 错题本：纯个人数据，读写都需要联网（离线时统一给「需要联网」提示）
+    mistakeBooks: {
+        async list() {
+            await requireUser();
+            const { data, error } = await supabase
+                .from('mistake_books')
+                .select('id, name, created_at, updated_at, mistake_questions(count)')
+                .order('created_at', { ascending: false });
+
+            if (error) fail(error.message, 500);
+            return (data || []).map(mapMistakeBook);
+        },
+
+        async create({ name } = {}) {
+            const user = await requireUser();
+            const text = String(name || '').trim();
+            if (!text) fail('错题本名称不能为空', 400);
+            if (text.length > 60) fail('名称太长了，请精简到 60 字以内', 400);
+
+            const { data, error } = await supabase
+                .from('mistake_books')
+                .insert({ user_id: user.id, name: text })
+                .select('id, name, created_at, updated_at')
+                .single();
+
+            if (error) fail(error.message, 500);
+            return { book: mapMistakeBook(data) };
+        },
+
+        async rename(id, name) {
+            await requireUser();
+            const text = String(name || '').trim();
+            if (!text) fail('错题本名称不能为空', 400);
+            if (text.length > 60) fail('名称太长了，请精简到 60 字以内', 400);
+
+            const { error } = await supabase.from('mistake_books').update({ name: text }).eq('id', id);
+            if (error) fail(error.message, 500);
+            return {};
+        },
+
+        async remove(id) {
+            await requireUser();
+            const { error } = await supabase.from('mistake_books').delete().eq('id', id);
+            if (error) fail(error.message, 500);
+            return {};
+        }
+    },
+
+    // 题型：用户自定义标签（如 Craft and Structure），可增删改
+    mistakeCategories: {
+        async list() {
+            await requireUser();
+            const { data, error } = await supabase
+                .from('mistake_categories')
+                .select('id, name, sort, created_at')
+                .order('sort', { ascending: true })
+                .order('created_at', { ascending: true });
+
+            if (error) fail(error.message, 500);
+            return (data || []).map(mapMistakeCategory);
+        },
+
+        async create({ name, sort = 0 } = {}) {
+            const user = await requireUser();
+            const text = String(name || '').trim();
+            if (!text) fail('题型名称不能为空', 400);
+            if (text.length > 40) fail('题型名称太长了', 400);
+
+            const { data, error } = await supabase
+                .from('mistake_categories')
+                .insert({ user_id: user.id, name: text, sort: Number(sort) || 0 })
+                .select('id, name, sort, created_at')
+                .single();
+
+            if (error) fail(error.message, 500);
+            return { category: mapMistakeCategory(data) };
+        },
+
+        async rename(id, name) {
+            await requireUser();
+            const text = String(name || '').trim();
+            if (!text) fail('题型名称不能为空', 400);
+            if (text.length > 40) fail('题型名称太长了', 400);
+
+            const { error } = await supabase.from('mistake_categories').update({ name: text }).eq('id', id);
+            if (error) fail(error.message, 500);
+            return {};
+        },
+
+        async remove(id) {
+            await requireUser();
+            const { error } = await supabase.from('mistake_categories').delete().eq('id', id);
+            if (error) fail(error.message, 500);
+            return {};
+        }
+    },
+
+    // 错题
+    mistakeQuestions: {
+        async list(bookId) {
+            await requireUser();
+            const { data, error } = await supabase
+                .from('mistake_questions')
+                .select('id, book_id, category_id, paper, number, stem, options, answer, my_answer, analysis, images, created_at')
+                .eq('book_id', bookId)
+                .order('created_at', { ascending: true });
+
+            if (error) fail(error.message, 500);
+            return (data || []).map(mapMistakeQuestion);
+        },
+
+        // 卷名候选：当前用户出现过的卷名（去重），供导入表单的下拉
+        async papers() {
+            await requireUser();
+            const { data, error } = await supabase.rpc('mistake_papers_of');
+            if (error) fail(error.message, 500);
+            return (data || []).map(row => ({ paper: row.paper, count: row.cnt || 0 }));
+        },
+
+        async create({ bookId, categoryId = null, paper = '', number = '', stem = '', options = [], answer = '', myAnswer = '', analysis = '', images = [] } = {}) {
+            const user = await requireUser();
+            if (!bookId) fail('请先选择错题本', 400);
+            if (!String(stem || '').trim() && !(images || []).length) fail('题干和截图至少填一样', 400);
+
+            const { data, error } = await supabase
+                .from('mistake_questions')
+                .insert({
+                    user_id: user.id,
+                    book_id: bookId,
+                    category_id: categoryId || null,
+                    paper: String(paper || '').trim(),
+                    number: String(number || '').trim(),
+                    stem: String(stem || '').trim(),
+                    options: cleanMistakeOptions(options),
+                    answer: String(answer || '').trim(),
+                    my_answer: String(myAnswer || '').trim(),
+                    analysis: String(analysis || '').trim(),
+                    images: cleanForumImages(images)
+                })
+                .select('id')
+                .single();
+
+            if (error) fail(error.message, 500);
+            return { question: data };
+        },
+
+        async update(id, patch = {}) {
+            await requireUser();
+
+            const row = {};
+            if ('categoryId' in patch) row.category_id = patch.categoryId || null;
+            if ('paper' in patch) row.paper = String(patch.paper || '').trim();
+            if ('number' in patch) row.number = String(patch.number || '').trim();
+            if ('stem' in patch) row.stem = String(patch.stem || '').trim();
+            if ('options' in patch) row.options = cleanMistakeOptions(patch.options);
+            if ('answer' in patch) row.answer = String(patch.answer || '').trim();
+            if ('myAnswer' in patch) row.my_answer = String(patch.myAnswer || '').trim();
+            if ('analysis' in patch) row.analysis = String(patch.analysis || '').trim();
+            if ('images' in patch) row.images = cleanForumImages(patch.images);
+
+            if (!Object.keys(row).length) return {};
+
+            const { error } = await supabase.from('mistake_questions').update(row).eq('id', id);
+            if (error) fail(error.message, 500);
+            return {};
+        },
+
+        async remove(id) {
+            await requireUser();
+            const { error } = await supabase.from('mistake_questions').delete().eq('id', id);
+            if (error) fail(error.message, 500);
+            return {};
+        },
+
+        // 上传错题截图：先等比压缩，再传到 media 公开桶的 <用户id>/mistakes/ 目录
+        async uploadImage(file) {
+            const user = await requireUser();
+
+            if (!file || !String(file.type || '').startsWith('image/')) {
+                fail('只能上传图片文件', 400);
+            }
+            if (file.size > FORUM_MAX_IMAGE_BYTES) fail('图片太大了，请压缩到 5MB 以内', 400);
+
+            const blob = await compressImage(file);
+            const name = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+            const path = `${user.id}/mistakes/${name}`;
+
+            const { error } = await supabase.storage
+                .from(MEDIA_BUCKET)
+                .upload(path, blob, { upsert: false, contentType: 'image/jpeg', cacheControl: '31536000' });
+            if (error) fail(error.message, 500);
+
+            const { data } = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(path);
+            return { url: data.publicUrl };
+        }
     }
 };
 
@@ -1728,7 +1973,21 @@ const ONLINE_ONLY = {
     'wordbooks.remove': '删除单词本',
     'wordbooks.removeWord': '删除单词',
     'wordbooks.updateWord': '修改词条',
-    'wordbooks.resetProgress': '清空背诵进度'
+    'wordbooks.resetProgress': '清空背诵进度',
+    'mistakeBooks.list': '错题本',
+    'mistakeBooks.create': '错题本',
+    'mistakeBooks.rename': '错题本',
+    'mistakeBooks.remove': '错题本',
+    'mistakeCategories.list': '错题本',
+    'mistakeCategories.create': '错题本',
+    'mistakeCategories.rename': '错题本',
+    'mistakeCategories.remove': '错题本',
+    'mistakeQuestions.list': '错题本',
+    'mistakeQuestions.papers': '错题本',
+    'mistakeQuestions.create': '错题本',
+    'mistakeQuestions.update': '错题本',
+    'mistakeQuestions.remove': '错题本',
+    'mistakeQuestions.uploadImage': '错题本'
 };
 
 for (const [name, label] of Object.entries(ONLINE_ONLY)) {

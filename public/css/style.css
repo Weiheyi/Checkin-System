@@ -4155,6 +4155,184 @@ button {
     margin-bottom: 4px;
 }
 
+/* ========== 错题本 ========== */
+.mk-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-3);
+}
+
+.mk-shot-preview {
+    position: relative;
+    display: inline-block;
+    max-width: 220px;
+    margin-top: var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+.mk-shot-preview img {
+    display: block;
+    width: 100%;
+}
+
+.select-input {
+    cursor: pointer;
+}
+
+.mk-options {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.mk-option-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.mk-option-label {
+    flex: 0 0 auto;
+    width: 24px;
+    text-align: center;
+    font-weight: 700;
+    color: var(--color-primary);
+}
+
+.mk-paper-group + .mk-paper-group {
+    margin-top: var(--space-4);
+}
+
+.mk-paper-head {
+    margin-bottom: var(--space-2);
+    padding-bottom: var(--space-1);
+    border-bottom: 2px solid var(--border);
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-strong);
+}
+
+.mk-question {
+    padding: var(--space-3);
+    margin-bottom: var(--space-3);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+}
+
+.mk-q-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    margin-bottom: var(--space-2);
+}
+
+.mk-q-no {
+    font-weight: 700;
+    color: var(--text-strong);
+}
+
+.mk-tag {
+    display: inline-block;
+    padding: 2px 10px;
+    background: var(--color-primary-soft);
+    color: var(--color-primary);
+    border-radius: var(--radius-pill);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.mk-q-actions {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+}
+
+.mk-q-actions .delete-btn {
+    margin-left: 0;
+}
+
+.mk-question:hover .delete-btn,
+.mk-question:hover .report-btn,
+.mk-question:focus-within .delete-btn,
+.mk-question:focus-within .report-btn {
+    opacity: 1;
+}
+
+.mk-q-stem {
+    margin-bottom: var(--space-2);
+    color: var(--text);
+    line-height: 1.6;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+}
+
+.mk-options-read {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: var(--space-2);
+}
+
+.mk-option {
+    display: flex;
+    gap: var(--space-2);
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    font-size: 14px;
+}
+
+.mk-option.is-answer {
+    background: var(--color-success-soft);
+    color: var(--text-strong);
+}
+
+.mk-q-answer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    font-size: 13px;
+}
+
+.mk-answer-right {
+    color: var(--color-success);
+    font-weight: 600;
+}
+
+.mk-answer-mine {
+    color: var(--color-danger);
+    font-weight: 600;
+}
+
+.mk-q-analysis {
+    margin-top: var(--space-2);
+    padding-top: var(--space-2);
+    border-top: 1px dashed var(--border);
+    font-size: 13px;
+    color: var(--text-muted);
+    white-space: pre-wrap;
+}
+
+.mk-q-image {
+    display: block;
+    max-width: 100%;
+    margin-top: var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: zoom-in;
+}
+
+@media (max-width: 720px) {
+    .mk-form-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 @media print {
     /* 只打印报告本身：顶栏、底部导航、背景图都收起来 */
     body.print-report-open > *:not(.print-report) {

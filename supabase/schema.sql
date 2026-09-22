@@ -166,6 +166,44 @@ create table if not exists public.word_reports (
   created_at timestamptz not null default now()
 );
 
+-- 错题本（工具页「错题本」用）：一本错题本里装多套卷的错题
+create table if not exists public.mistake_books (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- 题型（用户自定义标签，如 Craft and Structure）；sort 控制展示顺序
+create table if not exists public.mistake_categories (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  sort int not null default 0,
+  created_at timestamptz not null default now(),
+  unique (user_id, name)
+);
+
+-- 错题：paper 为卷名（如「2026年9月国际B卷」），options 存 [{label,text}]
+-- 分类被删除时 category_id 置空，题目本身保留
+create table if not exists public.mistake_questions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  book_id uuid not null references public.mistake_books(id) on delete cascade,
+  category_id uuid references public.mistake_categories(id) on delete set null,
+  paper text not null default '',
+  number text not null default '',
+  stem text not null default '',
+  options jsonb not null default '[]'::jsonb,
+  answer text not null default '',
+  my_answer text not null default '',
+  analysis text not null default '',
+  images text[] not null default '{}',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 -- ============================================================
 -- 二、好友与点赞
 -- ============================================================
@@ -253,7 +291,12 @@ create index if not exists feedback_user_idx          on public.feedback(user_id
 create index if not exists forum_posts_created_idx    on public.forum_posts(created_at desc);
 create index if not exists forum_posts_user_idx       on public.forum_posts(user_id);
 create index if not exists forum_comments_post_idx    on public.forum_comments(post_id, created_at);
-create index if not exists forum_comments_user_idx    on public.forum_comments(user_id);
+create index if not exists forum_comments_user_idx     on public.forum_comments(user_id);
+create index if not exists mistake_books_user_idx      on public.mistake_books(user_id, created_at desc);
+create index if not exists mistake_categories_user_idx on public.mistake_categories(user_id, sort);
+create index if not exists mistake_questions_book_idx  on public.mistake_questions(book_id, created_at);
+create index if not exists mistake_questions_user_idx  on public.mistake_questions(user_id, created_at desc);
+create index if not exists mistake_questions_cat_idx   on public.mistake_questions(category_id);
 
 -- ============================================================
 -- 三、行级安全（RLS）：本人可读写，好友可读
@@ -294,6 +337,9 @@ alter table public.feedback       enable row level security;
 alter table public.word_reports   enable row level security;
 alter table public.forum_posts    enable row level security;
 alter table public.forum_comments enable row level security;
+alter table public.mistake_books       enable row level security;
+alter table public.mistake_categories  enable row level security;
+alter table public.mistake_questions   enable row level security;
 
 -- profiles：本人可读写，好友可读
 drop policy if exists "profiles: own"          on public.profiles;
@@ -408,6 +454,16 @@ create policy "word_reports: own read"   on public.word_reports for select using
 create policy "word_reports: own insert" on public.word_reports for insert with check (auth.uid() = user_id);
 create policy "word_reports: own delete" on public.word_reports for delete using (auth.uid() = user_id);
 
+-- mistake_books / mistake_categories / mistake_questions：纯个人数据，仅本人可读写
+drop policy if exists "mistake_books: own all" on public.mistake_books;
+create policy "mistake_books: own all" on public.mistake_books for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "mistake_categories: own all" on public.mistake_categories;
+create policy "mistake_categories: own all" on public.mistake_categories for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "mistake_questions: own all" on public.mistake_questions;
+create policy "mistake_questions: own all" on public.mistake_questions for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
 -- ============================================================
 -- 四、触发器
 -- ============================================================
@@ -453,6 +509,16 @@ create trigger study_sessions_touch
 drop trigger if exists forum_posts_touch on public.forum_posts;
 create trigger forum_posts_touch
   before update on public.forum_posts
+  for each row execute function public.touch_updated_at();
+
+drop trigger if exists mistake_books_touch on public.mistake_books;
+create trigger mistake_books_touch
+  before update on public.mistake_books
+  for each row execute function public.touch_updated_at();
+
+drop trigger if exists mistake_questions_touch on public.mistake_questions;
+create trigger mistake_questions_touch
+  before update on public.mistake_questions
   for each row execute function public.touch_updated_at();
 
 -- ============================================================
@@ -873,6 +939,18 @@ begin
   return next rec;
 end; $$;
 
+-- 错题本：当前用户出现过的卷名（去重），供导入表单的候选下拉
+-- 用调用者权限，RLS 自动限定只看得到自己的错题
+create or replace function public.mistake_papers_of()
+returns table (paper text, cnt int)
+language sql stable set search_path = public as $$
+  select paper, count(*)::int
+  from public.mistake_questions
+  where user_id = auth.uid() and paper <> ''
+  group by paper
+  order by max(created_at) desc;
+$$;
+
 -- ============================================================
 -- 六、函数权限：只允许已登录用户调用
 -- ============================================================
@@ -891,6 +969,7 @@ revoke all on function public.update_word(uuid, text, text)              from pu
 revoke all on function public.forum_posts_list(int, int)                 from public, anon;
 revoke all on function public.forum_post_detail(uuid)                    from public, anon;
 revoke all on function public.forum_comments_of(uuid)                    from public, anon;
+revoke all on function public.mistake_papers_of()                        from public, anon;
 
 grant execute on function public.are_friends(uuid, uuid)   to authenticated;
 grant execute on function public.can_view_checkin(uuid)    to authenticated;
@@ -907,6 +986,7 @@ grant execute on function public.update_word(uuid, text, text)              to a
 grant execute on function public.forum_posts_list(int, int)                 to authenticated;
 grant execute on function public.forum_post_detail(uuid)                    to authenticated;
 grant execute on function public.forum_comments_of(uuid)                    to authenticated;
+grant execute on function public.mistake_papers_of()                        to authenticated;
 
 -- ============================================================
 -- 七、Storage：自定义头像与背景图

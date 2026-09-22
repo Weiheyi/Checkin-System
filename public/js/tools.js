@@ -6,6 +6,7 @@ import { extractFile, ACCEPT } from './file-extract.js';
 import { phoneticOf, loadPhonetics, phoneticsReady, speak, warmUpVoices } from './phonetic.js';
 import { dictReady, loadDictionary, meaningOf, meaningLines } from './dictionary.js';
 import { createVocabTool } from './vocab.js';
+import { createMistakesTool } from './mistakes.js';
 import * as net from './net.js';
 
 const els = {};
@@ -3172,7 +3173,14 @@ function speakDictWord() {
 
 /* ---------------- 工具切换 ---------------- */
 
-const TOOL_LABELS = { timer: '⏱ 计时器', countdown: '⏳ 倒计时', words: '📖 背单词', dict: '🔤 字典', vocab: '📊 词汇量测试' };
+const TOOL_LABELS = {
+    timer: '⏱ 计时器',
+    countdown: '⏳ 倒计时',
+    words: '📖 背单词',
+    dict: '🔤 字典',
+    vocab: '📊 词汇量测试',
+    mistakes: '📕 错题本'
+};
 
 // 传 null 回到「只列功能」的首页；选中某个工具后只显示它自己
 function switchTool(name) {
@@ -3187,9 +3195,11 @@ function switchTool(name) {
     els.panelWords.classList.toggle('hidden', name !== 'words');
     els.panelDict.classList.toggle('hidden', name !== 'dict');
     els.panelVocab.classList.toggle('hidden', name !== 'vocab');
+    els.panelMistakes.classList.toggle('hidden', name !== 'mistakes');
 
     // 词汇量测试的词库第一次进来才加载
     if (name === 'vocab') els.vocabTool.activate();
+    if (name === 'mistakes') els.mistakesTool.activate();
 
     if (name === 'dict') {
         // 切进来就先加载，第一次查词就不用等
@@ -3300,6 +3310,8 @@ function cacheElements() {
     els.panelDict = $('#panel-dict');
     els.panelVocab = $('#panel-vocab');
     els.vocabTool = createVocabTool(els.panelVocab);
+    els.panelMistakes = $('#panel-mistakes');
+    els.mistakesTool = createMistakesTool(els.panelMistakes);
 
     els.dictInput = $('#dictInput');
     els.dictResult = $('#dictResult');
