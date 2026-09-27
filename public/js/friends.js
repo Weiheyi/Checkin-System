@@ -1,6 +1,7 @@
 import { api } from './api.js';
 import { $, $$, toast, setLoading, relativeDate, skeletonRows, emptyState, confirmDialog, paintAvatar } from './ui.js';
 import { initShell } from './shell.js';
+import { refreshNotifications } from './notifications.js';
 
 // null 表示还没加载过；加载后缓存，切换回来不再重复请求。
 // 排行榜和好友列表共用同一份 overview 数据，只请求一次。
@@ -698,6 +699,7 @@ async function openThread(row) {
             /* 标记已读失败不影响看消息 */
         }
         refreshUnreadBadge();
+        refreshNotifications();
     }
 }
 
@@ -723,7 +725,9 @@ function init() {
         if (e.key === 'Enter') addFriend();
     });
 
-    showTab('feed');
+    // 支持从通知点击直达（friends.html?tab=messages）
+    const wanted = new URLSearchParams(location.search).get('tab');
+    showTab(['feed', 'rank', 'friends', 'messages'].includes(wanted) ? wanted : 'feed');
     refreshUnreadBadge();
 }
 

@@ -9,7 +9,7 @@
 import { api } from './api.js';
 import { MISTAKE_DEFAULT_CATEGORIES } from './config.js';
 import { store } from './store.js';
-import { toast, confirmDialog, setLoading, skeletonRows } from './ui.js';
+import { toast, confirmDialog, setLoading, skeletonRows, textPrompt } from './ui.js';
 import { ocrImage } from './file-extract.js';
 import * as net from './net.js';
 
@@ -120,76 +120,6 @@ function statItem(icon, value, label) {
 
     wrap.append(iconEl, valueEl, labelEl);
     return wrap;
-}
-
-// 一个带输入框的弹窗（重命名错题本 / 题型用），复用 ui.js 的弹窗样式
-function textPrompt({ title = '输入', value = '', placeholder = '', confirmText = '确定' } = {}) {
-    return new Promise(resolve => {
-        const overlay = document.createElement('div');
-        overlay.className = 'modal-overlay';
-
-        const box = document.createElement('div');
-        box.className = 'modal-box';
-        box.setAttribute('role', 'dialog');
-        box.setAttribute('aria-modal', 'true');
-
-        const heading = document.createElement('h4');
-        heading.className = 'modal-title';
-        heading.textContent = title;
-
-        const field = document.createElement('input');
-        field.type = 'text';
-        field.className = 'text-input';
-        field.value = value;
-        field.placeholder = placeholder;
-
-        const actions = document.createElement('div');
-        actions.className = 'modal-actions';
-
-        const cancel = document.createElement('button');
-        cancel.type = 'button';
-        cancel.className = 'btn-ghost';
-        cancel.textContent = '取消';
-
-        const ok = document.createElement('button');
-        ok.type = 'button';
-        ok.className = 'btn-primary';
-        ok.textContent = confirmText;
-
-        actions.append(cancel, ok);
-        box.append(heading, field, actions);
-        overlay.appendChild(box);
-        document.body.appendChild(overlay);
-
-        function close(result) {
-            overlay.classList.remove('show');
-            document.removeEventListener('keydown', onKey);
-            setTimeout(() => overlay.remove(), 180);
-            resolve(result);
-        }
-
-        function submit() {
-            const text = field.value.trim();
-            if (!text) return toast('不能为空', 'error');
-            close(text);
-        }
-
-        function onKey(e) {
-            if (e.key === 'Escape') close(null);
-            else if (e.key === 'Enter') submit();
-        }
-
-        cancel.addEventListener('click', () => close(null));
-        ok.addEventListener('click', submit);
-        overlay.addEventListener('click', e => {
-            if (e.target === overlay) close(null);
-        });
-        document.addEventListener('keydown', onKey);
-
-        requestAnimationFrame(() => overlay.classList.add('show'));
-        field.focus();
-        field.select();
-    });
 }
 
 /* ---------------- 工具本体 ---------------- */

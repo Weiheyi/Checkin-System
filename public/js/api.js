@@ -1099,6 +1099,38 @@ export const api = {
         }
     },
 
+    // 全局通知（顶栏铃铛 + 导航角标）：好友私信 / 论坛新帖 / 我帖子的新评论 / 我动态的新评论
+    notifications: {
+        // 各类型未读数，返回 { message, post, post_comment, checkin_comment }
+        async summary() {
+            await requireUser();
+            const { data, error } = await supabase.rpc('notification_summary');
+            if (error) fail(error.message, 500);
+
+            const counts = { message: 0, post: 0, post_comment: 0, checkin_comment: 0 };
+            (data || []).forEach(row => {
+                if (row.kind in counts) counts[row.kind] = Number(row.unread) || 0;
+            });
+            return counts;
+        },
+
+        // 最近的通知，带作者昵称 / 头像，最新的在前
+        async list(limit = 30) {
+            await requireUser();
+            const { data, error } = await supabase.rpc('notification_list', { p_limit: limit });
+            if (error) fail(error.message, 500);
+            return data || [];
+        },
+
+        // 标记某类通知已看：scope 为 forum / post / post_comment 或 checkin / checkin_comment
+        async markSeen(scope) {
+            await requireUser();
+            const { error } = await supabase.rpc('mark_notifications_seen', { p_scope: scope });
+            if (error) fail(error.message, 500);
+            return {};
+        }
+    },
+
     posts: {
         // 帖子列表，最新的在前；带作者昵称/头像与评论数
         async list({ limit = 20, offset = 0 } = {}) {
@@ -1480,6 +1512,38 @@ export const api = {
             const { error } = await supabase.from('words').delete().eq('id', id);
             if (error) fail(error.message, 500);
             return {};
+        },
+
+        // 合并：把 sourceIds 并进 targetId，源本子会被删除。
+        // 服务端 merge_wordbooks 单事务完成（搬词 + 去重 + 删源本），dedupe 为真时同名词只留熟练度高的
+        async merge(targetId, sourceIds, dedupe = true) {
+            await requireUser();
+            const { data, error } = await supabase.rpc('merge_wordbooks', {
+                p_target_id: targetId,
+                p_source_ids: sourceIds,
+                p_dedupe: dedupe
+            });
+
+            if (error) fail(error.message, 500);
+            const row = (data && data[0]) || {};
+            return {
+                moved: row.moved || 0,
+                skipped: row.skipped || 0,
+                removed: row.removed || 0
+            };
+        },
+
+        // 复制：克隆一本（含单词）。withProgress 决定是否带上熟练度 / 正确率，默认清空
+        async duplicate(id, { name, withProgress = false } = {}) {
+            await requireUser();
+            const { data, error } = await supabase.rpc('duplicate_wordbook', {
+                p_id: id,
+                p_name: name || null,
+                p_with_progress: withProgress
+            });
+
+            if (error) fail(error.message, 500);
+            return { id: data };
         },
 
         // 用户自行修正词条：改单词 / 释义，并同步该词历史背诵明细里的冗余快照。
@@ -1974,6 +2038,11 @@ const ONLINE_ONLY = {
     'wordbooks.removeWord': '删除单词',
     'wordbooks.updateWord': '修改词条',
     'wordbooks.resetProgress': '清空背诵进度',
+    'wordbooks.merge': '合并单词本',
+    'wordbooks.duplicate': '复制单词本',
+    'notifications.summary': '查看通知',
+    'notifications.list': '查看通知',
+    'notifications.markSeen': '标记已读',
     'mistakeBooks.list': '错题本',
     'mistakeBooks.create': '错题本',
     'mistakeBooks.rename': '错题本',

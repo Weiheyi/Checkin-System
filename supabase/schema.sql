@@ -267,6 +267,15 @@ create table if not exists public.messages (
   created_at timestamptz not null default now()
 );
 
+-- 通知已读基线：每个用户一行，记录「论坛」与「我的动态」两类内容的已看时间点。
+-- 私信不用它，沿用 messages.read_at。没有行时按 now() 处理，新用户不会把历史内容当未读
+create table if not exists public.notification_seen (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  forum_seen_at timestamptz,
+  checkin_seen_at timestamptz,
+  updated_at timestamptz not null default now()
+);
+
 create index if not exists tasks_checkin_id_idx        on public.tasks(checkin_id);
 create index if not exists checkins_user_date_idx      on public.checkins(user_id, checkin_date);
 create index if not exists checkins_user_date_desc_idx on public.checkins(user_id, checkin_date desc);
@@ -277,6 +286,8 @@ create index if not exists checkin_comments_checkin_idx on public.checkin_commen
 create index if not exists checkin_comments_user_idx    on public.checkin_comments(user_id);
 create index if not exists messages_sender_idx          on public.messages(sender_id, created_at desc);
 create index if not exists messages_recipient_idx       on public.messages(recipient_id, created_at desc);
+-- 未读计数按 recipient_id + read_at is null 过滤，给个部分索引
+create index if not exists messages_recipient_unread_idx on public.messages(recipient_id) where read_at is null;
 create index if not exists wordbooks_user_idx          on public.wordbooks(user_id);
 create index if not exists words_book_idx              on public.words(book_id);
 create index if not exists words_user_idx              on public.words(user_id);
@@ -328,6 +339,7 @@ alter table public.friendships   enable row level security;
 alter table public.checkin_likes enable row level security;
 alter table public.checkin_comments enable row level security;
 alter table public.messages      enable row level security;
+alter table public.notification_seen enable row level security;
 alter table public.wordbooks     enable row level security;
 alter table public.words         enable row level security;
 alter table public.study_sessions enable row level security;
@@ -420,6 +432,11 @@ create policy "messages: recipient mark read" on public.messages for update
 create policy "messages: delete own" on public.messages for delete
   using (auth.uid() = sender_id or auth.uid() = recipient_id);
 
+-- notification_seen：纯个人数据，仅本人可读写
+drop policy if exists "notification_seen: own all" on public.notification_seen;
+create policy "notification_seen: own all" on public.notification_seen
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
 -- wordbooks / words：纯个人数据，仅本人可读写（不开放给好友）
 drop policy if exists "wordbooks: own all" on public.wordbooks;
 create policy "wordbooks: own all" on public.wordbooks for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
@@ -468,7 +485,7 @@ create policy "mistake_questions: own all" on public.mistake_questions for all u
 -- 四、触发器
 -- ============================================================
 
--- 注册时自动创建 profile
+-- 注册时自动创建 profile 与通知基线
 -- security definer 绕过 RLS，因此即使开启了邮箱验证也能正常写入
 create or replace function public.handle_new_user() returns trigger
 language plpgsql security definer set search_path = public as $$
@@ -479,6 +496,13 @@ begin
     coalesce(new.raw_user_meta_data->>'nickname', split_part(new.email, '@', 1))
   )
   on conflict (id) do nothing;
+
+  -- 通知基线：不写这一行的话，notification_summary 每次都会拿 now() 当基准，
+  -- 新帖 / 新评论永远算不出「未读」。注册时先把基准定在当下
+  insert into public.notification_seen (user_id, forum_seen_at, checkin_seen_at)
+  values (new.id, now(), now())
+  on conflict (user_id) do nothing;
+
   return new;
 end; $$;
 
@@ -486,6 +510,11 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
+
+-- 老用户补一行通知基线（基准定在本次执行时间，历史内容不算未读）
+insert into public.notification_seen (user_id, forum_seen_at, checkin_seen_at)
+select id, now(), now() from public.profiles
+on conflict (user_id) do nothing;
 
 -- profiles.updated_at 自动维护
 create or replace function public.touch_updated_at() returns trigger language plpgsql as $$
@@ -951,6 +980,222 @@ language sql stable set search_path = public as $$
   order by max(created_at) desc;
 $$;
 
+-- 合并单词本：把 p_source_ids 里的单词并入 p_target_id，然后删掉源本子。
+-- 单事务完成，避免前端分批搬词时出现「搬到一半」的中间状态。
+-- p_dedupe 为真时按 term（忽略大小写）去重：重复词删掉，只保留熟练度高的那条
+drop function if exists public.merge_wordbooks(uuid, uuid[], boolean);
+create or replace function public.merge_wordbooks(
+  p_target_id uuid,
+  p_source_ids uuid[],
+  p_dedupe boolean default true
+) returns table (target_id uuid, moved int, skipped int, removed int)
+language plpgsql security definer set search_path = public as $$
+declare
+  me uuid := auth.uid();
+  srcs uuid[];
+  base int;
+  r record;
+  v_moved int := 0;
+  v_skipped int := 0;
+  v_removed int := 0;
+begin
+  if me is null then raise exception '请先登录'; end if;
+  if p_target_id is null then raise exception '请选择合并到哪一本'; end if;
+  if not exists (select 1 from public.wordbooks b where b.id = p_target_id and b.user_id = me) then
+    raise exception '目标单词本不存在';
+  end if;
+
+  -- 源本子：去掉目标本自己、去重
+  select array_agg(distinct s) into srcs
+    from unnest(coalesce(p_source_ids, '{}'::uuid[])) s
+   where s <> p_target_id;
+
+  if srcs is null or array_length(srcs, 1) = 0 then
+    raise exception '请至少选择两本要合并的单词本';
+  end if;
+
+  if exists (
+    select 1 from unnest(srcs) s
+    where not exists (select 1 from public.wordbooks b where b.id = s and b.user_id = me)
+  ) then
+    raise exception '有不属于你的单词本，无法合并';
+  end if;
+
+  select coalesce(max(w.position), -1) into base
+    from public.words w where w.book_id = p_target_id;
+
+  for r in
+    select w.id, w.term, w.mastery
+      from public.words w
+     where w.book_id = any(srcs) and w.user_id = me
+     order by w.book_id, w.position, w.id
+  loop
+    base := base + 1;
+    if p_dedupe and exists (
+      select 1 from public.words t
+       where t.book_id = p_target_id and lower(t.term) = lower(r.term)
+    ) then
+      update public.words t
+         set mastery = greatest(t.mastery, r.mastery)
+       where t.book_id = p_target_id and lower(t.term) = lower(r.term);
+      v_skipped := v_skipped + 1;
+    else
+      update public.words set book_id = p_target_id, position = base where id = r.id;
+      v_moved := v_moved + 1;
+    end if;
+  end loop;
+
+  -- 删掉源本子；被去重后仍留在源本子里的词随外键 on delete cascade 一起删
+  with del as (
+    delete from public.wordbooks where id = any(srcs) and user_id = me returning 1
+  )
+  select count(*) into v_removed from del;
+
+  update public.wordbooks set updated_at = now() where id = p_target_id;
+
+  return query select p_target_id, v_moved, v_skipped, v_removed;
+end; $$;
+
+-- 复制单词本：克隆一本（含单词）。p_with_progress 决定是否带上熟练度 / 正确率，
+-- 默认 false —— 新本子从零开始背。返回新本子的 id
+drop function if exists public.duplicate_wordbook(uuid, text, boolean);
+create or replace function public.duplicate_wordbook(
+  p_id uuid,
+  p_name text,
+  p_with_progress boolean default false
+) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare
+  me uuid := auth.uid();
+  new_id uuid;
+  new_name text;
+begin
+  if me is null then raise exception '请先登录'; end if;
+  if not exists (select 1 from public.wordbooks b where b.id = p_id and b.user_id = me) then
+    raise exception '单词本不存在';
+  end if;
+
+  new_name := nullif(trim(coalesce(p_name, '')), '');
+  if new_name is null then
+    select b.name || ' 副本' into new_name from public.wordbooks b where b.id = p_id;
+  end if;
+
+  insert into public.wordbooks (user_id, name) values (me, new_name) returning id into new_id;
+
+  insert into public.words
+    (user_id, book_id, term, meaning, mastery, review_count, correct_count,
+     wrong_count, last_reviewed_at, last_result, position)
+  select w.user_id, new_id, w.term, w.meaning,
+    case when p_with_progress then w.mastery else 0 end,
+    case when p_with_progress then w.review_count else 0 end,
+    case when p_with_progress then w.correct_count else 0 end,
+    case when p_with_progress then w.wrong_count else 0 end,
+    case when p_with_progress then w.last_reviewed_at else null end,
+    case when p_with_progress then w.last_result else null end,
+    w.position
+    from public.words w
+   where w.book_id = p_id and w.user_id = me;
+
+  return new_id;
+end; $$;
+
+-- 通知：各类型的未读数（顶栏铃铛与导航角标用）。
+-- 私信看 read_at；帖子 / 评论按 notification_seen 的时间点判断「新」
+create or replace function public.notification_summary()
+returns table (kind text, unread bigint)
+language sql security definer stable set search_path = public as $$
+  with me as (select auth.uid() as uid),
+  seen as (
+    select coalesce(ns.forum_seen_at, now()) as forum_at,
+           coalesce(ns.checkin_seen_at, now()) as checkin_at
+      from (select 1) x
+      left join public.notification_seen ns on ns.user_id = (select uid from me)
+  )
+  select 'message', count(*)::bigint from public.messages m
+    where m.recipient_id = (select uid from me) and m.read_at is null
+  union all
+  select 'post', count(*)::bigint from public.forum_posts fp
+    where fp.user_id <> (select uid from me) and fp.created_at > (select forum_at from seen)
+  union all
+  select 'post_comment', count(*)::bigint from public.forum_comments fc
+    join public.forum_posts fp on fp.id = fc.post_id
+    where fp.user_id = (select uid from me) and fc.user_id <> (select uid from me)
+      and fc.created_at > (select forum_at from seen)
+  union all
+  select 'checkin_comment', count(*)::bigint from public.checkin_comments cc
+    join public.checkins c on c.id = cc.checkin_id
+    where c.user_id = (select uid from me) and cc.user_id <> (select uid from me)
+      and cc.created_at > (select checkin_at from seen);
+$$;
+
+-- 通知列表：最近的提醒，带作者昵称 / 头像，最新的在前。
+-- profiles 只允许本人 / 好友读，这里走 security definer 暴露作者信息
+drop function if exists public.notification_list(int);
+create or replace function public.notification_list(p_limit int default 30)
+returns table (
+  kind text, ref_id uuid, target_id uuid, title text, preview text,
+  nickname text, avatar_emoji text, avatar_url text, created_at timestamptz, is_new boolean
+)
+language sql security definer stable set search_path = public as $$
+  with me as (select auth.uid() as uid),
+  seen as (
+    select coalesce(ns.forum_seen_at, now()) as forum_at,
+           coalesce(ns.checkin_seen_at, now()) as checkin_at
+      from (select 1) x
+      left join public.notification_seen ns on ns.user_id = (select uid from me)
+  ),
+  items as (
+    select 'message'::text as kind, m.sender_id as ref_id, m.sender_id as target_id,
+           ''::text as title, left(m.content, 80) as preview,
+           m.sender_id as actor, m.created_at, (m.read_at is null) as is_new
+      from public.messages m where m.recipient_id = (select uid from me)
+    union all
+    select 'post', fp.id, fp.id, fp.title, left(coalesce(fp.content, ''), 80),
+           fp.user_id, fp.created_at, fp.created_at > (select forum_at from seen)
+      from public.forum_posts fp where fp.user_id <> (select uid from me)
+    union all
+    select 'post_comment', fc.id, fc.post_id, fp.title, left(fc.content, 80),
+           fc.user_id, fc.created_at, fc.created_at > (select forum_at from seen)
+      from public.forum_comments fc
+      join public.forum_posts fp on fp.id = fc.post_id
+      where fp.user_id = (select uid from me) and fc.user_id <> (select uid from me)
+    union all
+    select 'checkin_comment', cc.id, c.id, ''::text, left(cc.content, 80),
+           cc.user_id, cc.created_at, cc.created_at > (select checkin_at from seen)
+      from public.checkin_comments cc
+      join public.checkins c on c.id = cc.checkin_id
+      where c.user_id = (select uid from me) and cc.user_id <> (select uid from me)
+  )
+  select i.kind, i.ref_id, i.target_id, i.title, i.preview,
+         coalesce(nullif(p.nickname, ''), '用户'), p.avatar_emoji, p.avatar_url,
+         i.created_at, i.is_new
+    from items i
+    left join public.profiles p on p.id = i.actor
+   order by i.created_at desc
+   limit p_limit;
+$$;
+
+-- 标记通知已看：p_scope 为 forum / post / post_comment 时更新论坛基线，
+-- checkin / checkin_comment 时更新动态基线。私信不走这里
+create or replace function public.mark_notifications_seen(p_scope text)
+returns void
+language plpgsql security definer set search_path = public as $$
+declare me uuid := auth.uid();
+begin
+  if me is null then raise exception '请先登录'; end if;
+
+  insert into public.notification_seen (user_id, forum_seen_at, checkin_seen_at)
+  values (me,
+    case when p_scope in ('forum', 'post', 'post_comment') then now() end,
+    case when p_scope in ('checkin', 'checkin_comment') then now() end)
+  on conflict (user_id) do update set
+    forum_seen_at   = case when p_scope in ('forum', 'post', 'post_comment')
+                           then now() else public.notification_seen.forum_seen_at end,
+    checkin_seen_at = case when p_scope in ('checkin', 'checkin_comment')
+                           then now() else public.notification_seen.checkin_seen_at end,
+    updated_at = now();
+end; $$;
+
 -- ============================================================
 -- 六、函数权限：只允许已登录用户调用
 -- ============================================================
@@ -970,6 +1215,11 @@ revoke all on function public.forum_posts_list(int, int)                 from pu
 revoke all on function public.forum_post_detail(uuid)                    from public, anon;
 revoke all on function public.forum_comments_of(uuid)                    from public, anon;
 revoke all on function public.mistake_papers_of()                        from public, anon;
+revoke all on function public.merge_wordbooks(uuid, uuid[], boolean)     from public, anon;
+revoke all on function public.duplicate_wordbook(uuid, text, boolean)    from public, anon;
+revoke all on function public.notification_summary()                     from public, anon;
+revoke all on function public.notification_list(int)                     from public, anon;
+revoke all on function public.mark_notifications_seen(text)              from public, anon;
 
 grant execute on function public.are_friends(uuid, uuid)   to authenticated;
 grant execute on function public.can_view_checkin(uuid)    to authenticated;
@@ -987,6 +1237,11 @@ grant execute on function public.forum_posts_list(int, int)                 to a
 grant execute on function public.forum_post_detail(uuid)                    to authenticated;
 grant execute on function public.forum_comments_of(uuid)                    to authenticated;
 grant execute on function public.mistake_papers_of()                        to authenticated;
+grant execute on function public.merge_wordbooks(uuid, uuid[], boolean)     to authenticated;
+grant execute on function public.duplicate_wordbook(uuid, text, boolean)    to authenticated;
+grant execute on function public.notification_summary()                     to authenticated;
+grant execute on function public.notification_list(int)                     to authenticated;
+grant execute on function public.mark_notifications_seen(text)              to authenticated;
 
 -- ============================================================
 -- 七、Storage：自定义头像与背景图

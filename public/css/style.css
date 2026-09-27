@@ -4347,3 +4347,229 @@ button {
         margin: 14mm 12mm;
     }
 }
+
+/* ========== 导航角标与通知（顶栏 🔔） ========== */
+
+.nav-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    margin-left: 5px;
+    padding: 0 4px;
+    background: var(--color-danger);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    border-radius: var(--radius-pill);
+    vertical-align: middle;
+}
+
+.nav-badge[hidden] {
+    display: none;
+}
+
+/* 底部导航：角标叠在图标右上角 */
+.tabbar-icon {
+    position: relative;
+}
+
+.nav-badge-tab {
+    position: absolute;
+    top: -6px;
+    left: 100%;
+    margin-left: -5px;
+}
+
+/* 顶栏铃铛：角标叠在右上角 */
+#shellBell {
+    position: relative;
+}
+
+#shellBell .nav-badge {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    margin-left: 0;
+}
+
+.user-info {
+    position: relative;
+}
+
+.notif-panel {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    z-index: 120;
+    width: min(360px, calc(100vw - 24px));
+    max-height: min(70vh, 520px);
+    overflow-y: auto;
+    padding: 6px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-2);
+}
+
+.notif-panel[hidden] {
+    display: none;
+}
+
+.notif-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 9px 10px;
+    border-radius: var(--radius-md);
+    text-decoration: none;
+    color: var(--text);
+    transition: background var(--transition);
+}
+
+.notif-item:hover {
+    background: var(--color-primary-soft);
+}
+
+.notif-item-icon {
+    flex-shrink: 0;
+    font-size: 15px;
+    line-height: 1.5;
+}
+
+.notif-item-avatar {
+    flex-shrink: 0;
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background: var(--gradient);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 50%;
+}
+
+.notif-item-avatar.has-image {
+    background-size: cover;
+    background-position: center;
+}
+
+.notif-item-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.notif-item-line {
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.notif-item-preview {
+    font-size: 12px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.notif-item-time {
+    flex-shrink: 0;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.notif-item.notif-new .notif-item-line {
+    font-weight: 700;
+}
+
+.notif-empty {
+    padding: 18px 10px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+/* ========== 单词本：行内操作与合并 ========== */
+
+.book-actions {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.book-action {
+    padding: 5px 10px;
+    margin-left: 6px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.book-item:hover .book-action,
+.book-item:focus-within .book-action {
+    opacity: 1;
+}
+
+.book-action:hover {
+    color: var(--color-primary);
+    border-color: var(--color-primary);
+}
+
+.merge-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    margin-bottom: var(--space-2);
+    padding: 8px 10px;
+    background: var(--color-primary-soft);
+    border-radius: var(--radius-md);
+}
+
+.merge-bar[hidden] {
+    display: none;
+}
+
+.merge-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.merge-actions {
+    display: flex;
+    gap: var(--space-2);
+}
+
+.book-check {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    cursor: pointer;
+    accent-color: var(--color-primary);
+}
+
+.book-item-checked {
+    outline: 1px solid var(--color-primary);
+}
+
+/* 触摸设备：行内操作按钮始终可见，否则没有 hover 就点不到 */
+@media (hover: none) {
+    .book-action {
+        opacity: 1;
+    }
+}
+

@@ -121,8 +121,16 @@
                     <h3 class="card-title">📖 我的单词本</h3>
                     <div class="title-actions">
                         <button class="btn-ghost" id="recordsBtn" type="button">📅 学习记录</button>
+                        <button class="btn-ghost" id="mergeBooksBtn" type="button">⇄ 合并</button>
                         <button class="btn-ghost" id="newBookBtn" type="button">＋ 新建</button>
                     </div>
+                </div>
+                <div class="merge-bar" id="mergeBar" hidden>
+                    <span class="merge-hint" id="mergeHint">勾选要合并的单词本（至少两本），再点「合并选中」</span>
+                    <span class="merge-actions">
+                        <button class="btn-ghost" id="mergeCancel" type="button">取消</button>
+                        <button class="btn-primary" id="mergeConfirm" type="button">合并选中</button>
+                    </span>
                 </div>
                 <div id="bookList"></div>
                 <p class="empty-hint" id="bookEmpty" hidden>还没有单词本，点「新建」粘贴一份单词表就能开始了</p>

@@ -4,6 +4,7 @@ import { api } from './api.js';
 import { resolvedTheme, setTheme } from './theme.js';
 import { paintAvatar, showGuideTip, guideTipOff, toast } from './ui.js';
 import { registerOffline } from './offline.js';
+import { initNotifications } from './notifications.js';
 import * as net from './net.js';
 
 // 应用页共用同一套导航，新增页面时只改这里
@@ -38,14 +39,16 @@ export async function logout() {
 
 function navLinks(active) {
     return NAV.map(item =>
-        `<a class="app-nav-link${item.key === active ? ' active' : ''}" href="${item.href}">${item.label}</a>`
+        `<a class="app-nav-link${item.key === active ? ' active' : ''}" href="${item.href}">${item.label}`
+        + `<span class="nav-badge" data-nav-badge="${item.key}" hidden></span></a>`
     ).join('');
 }
 
 function tabItems(active) {
     return NAV.map(item => `
         <a class="tabbar-item${item.key === active ? ' active' : ''}" href="${item.href}">
-            <span class="tabbar-icon" aria-hidden="true">${item.icon}</span>
+            <span class="tabbar-icon" aria-hidden="true">${item.icon}`
+            + `<span class="nav-badge nav-badge-tab" data-nav-badge="${item.key}" hidden></span></span>
             <span class="tabbar-label">${item.label}</span>
         </a>`).join('');
 }
@@ -90,8 +93,10 @@ export function mountShell({ active }) {
                     <span class="user-name" id="shellName">用户</span>
                     <span class="user-sub" id="shellSub">今天开始你的打卡</span>
                 </div>
+                <button class="icon-btn" id="shellBell" type="button" aria-label="通知" aria-expanded="false">🔔<span class="nav-badge" id="bellBadge" hidden></span></button>
                 <button class="icon-btn" id="shellTheme" type="button" aria-label="切换主题">🌙</button>
                 <button class="btn-ghost" id="shellLogout" type="button">退出</button>
+                <div class="notif-panel" id="notifPanel" hidden></div>
             </div>
         </header>
         <div class="net-banner" id="netBanner" hidden>
@@ -130,6 +135,8 @@ export function mountShell({ active }) {
     const cached = store.getUser();
     if (cached) setShellUser(cached);
     paintThemeButton();
+
+    initNotifications();
 
     maybeShowGuideTip(active);
 }

@@ -268,6 +268,79 @@ export function chooseDialog({ title = '请选择', message = '', options = [], 
     });
 }
 
+/* ---------------- 文本输入弹窗 ---------------- */
+
+// 一个带输入框的弹窗（重命名单词本 / 错题本 / 题型，复制单词本命名等）。
+// 复用 modal 的样式；Enter 确认、Esc / 点遮罩取消。空值不允许提交
+export function textPrompt({ title = '输入', value = '', placeholder = '', confirmText = '确定' } = {}) {
+    return new Promise(resolve => {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+
+        const box = document.createElement('div');
+        box.className = 'modal-box';
+        box.setAttribute('role', 'dialog');
+        box.setAttribute('aria-modal', 'true');
+
+        const heading = document.createElement('h4');
+        heading.className = 'modal-title';
+        heading.textContent = title;
+
+        const field = document.createElement('input');
+        field.type = 'text';
+        field.className = 'text-input';
+        field.value = value;
+        field.placeholder = placeholder;
+
+        const actions = document.createElement('div');
+        actions.className = 'modal-actions';
+
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.className = 'btn-ghost';
+        cancel.textContent = '取消';
+
+        const ok = document.createElement('button');
+        ok.type = 'button';
+        ok.className = 'btn-primary';
+        ok.textContent = confirmText;
+
+        actions.append(cancel, ok);
+        box.append(heading, field, actions);
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+
+        function close(result) {
+            overlay.classList.remove('show');
+            document.removeEventListener('keydown', onKey);
+            setTimeout(() => overlay.remove(), 180);
+            resolve(result);
+        }
+
+        function submit() {
+            const text = field.value.trim();
+            if (!text) return toast('不能为空', 'error');
+            close(text);
+        }
+
+        function onKey(e) {
+            if (e.key === 'Escape') close(null);
+            else if (e.key === 'Enter') submit();
+        }
+
+        cancel.addEventListener('click', () => close(null));
+        ok.addEventListener('click', submit);
+        overlay.addEventListener('click', e => {
+            if (e.target === overlay) close(null);
+        });
+        document.addEventListener('keydown', onKey);
+
+        requestAnimationFrame(() => overlay.classList.add('show'));
+        field.focus();
+        field.select();
+    });
+}
+
 /* ---------------- 词条报错 / 修正 ---------------- */
 
 // 原因按遇到的多寡排：只报错时第一条默认选中，点一下「提交报错」就够了；

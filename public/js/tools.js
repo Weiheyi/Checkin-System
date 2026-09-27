@@ -1,6 +1,6 @@
 import { PAGES, AUTO_CHECKIN_WORDS } from './config.js';
 import { api } from './api.js';
-import { $, $$, toast, confirmDialog, chooseDialog, reportDialog, setLoading, skeletonRows } from './ui.js';
+import { $, $$, toast, confirmDialog, chooseDialog, reportDialog, textPrompt, setLoading, skeletonRows } from './ui.js';
 import { initShell } from './shell.js';
 import { extractFile, ACCEPT } from './file-extract.js';
 import { phoneticOf, loadPhonetics, phoneticsReady, speak, warmUpVoices } from './phonetic.js';
@@ -551,7 +551,10 @@ const wordsState = {
     page: 1,
     pages: 1,
     filter: 'all',
-    selected: new Set()
+    selected: new Set(),
+    // 「合并单词本」模式：进入后每行出现复选框，勾选 ≥2 本再选合并到哪一本
+    mergeMode: false,
+    mergeSelected: new Set()
 };
 
 // 搜单词：只在当前筛选 + 排序的结果里定位，报出的页码和列表显示的一致
@@ -636,8 +639,26 @@ function showWordView(view) {
 
 const EMPTY_BOOKS_TEXT = '还没有单词本，点「新建」粘贴一份单词表就能开始了';
 
+// 单词本行上的一个小操作按钮（重命名 / 复制 / 导出）
+function bookAction(label, aria, handler) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'book-action';
+    btn.textContent = label;
+    btn.setAttribute('aria-label', aria);
+    btn.addEventListener('click', handler);
+    return btn;
+}
+
 function renderBooks() {
     const books = wordsState.books;
+    const merging = wordsState.mergeMode;
+
+    els.mergeBar.hidden = !merging;
+    els.mergeBooksBtn.hidden = merging;
+    els.mergeConfirm.disabled = wordsState.mergeSelected.size < 2;
+    els.mergeHint.textContent = `已选 ${wordsState.mergeSelected.size} 本（至少两本），选好后点「合并选中」`;
+
     els.bookEmpty.textContent = EMPTY_BOOKS_TEXT;
     els.bookEmpty.hidden = books.length > 0;
     els.bookList.replaceChildren();
@@ -646,6 +667,21 @@ function renderBooks() {
     books.forEach(book => {
         const row = document.createElement('div');
         row.className = 'book-item';
+
+        // 合并模式下每行左侧一个复选框，整行点击也能勾选 / 取消
+        if (merging) {
+            const checked = wordsState.mergeSelected.has(book.id);
+
+            const check = document.createElement('input');
+            check.type = 'checkbox';
+            check.className = 'book-check';
+            check.checked = checked;
+            check.setAttribute('aria-label', `选择 ${book.name}`);
+            check.addEventListener('change', () => toggleMergeSelect(book.id, check.checked));
+
+            row.appendChild(check);
+            row.classList.toggle('book-item-checked', checked);
+        }
 
         const main = document.createElement('button');
         main.type = 'button';
@@ -660,16 +696,34 @@ function renderBooks() {
         sub.textContent = `${book.wordCount} 个单词`;
 
         main.append(name, sub);
-        main.addEventListener('click', () => openBook(book.id));
+        main.addEventListener('click', () => {
+            if (merging) toggleMergeSelect(book.id, !wordsState.mergeSelected.has(book.id));
+            else openBook(book.id);
+        });
 
-        const del = document.createElement('button');
-        del.type = 'button';
-        del.className = 'delete-btn book-delete';
-        del.textContent = '删除';
-        del.setAttribute('aria-label', `删除单词本 ${book.name}`);
-        del.addEventListener('click', () => removeBook(book));
+        row.appendChild(main);
 
-        row.append(main, del);
+        if (!merging) {
+            const actions = document.createElement('div');
+            actions.className = 'book-actions';
+
+            actions.append(
+                bookAction('重命名', `重命名单词本 ${book.name}`, () => renameBook(book)),
+                bookAction('复制', `复制单词本 ${book.name}`, () => duplicateBook(book)),
+                bookAction('导出', `导出单词本 ${book.name}`, () => exportBook(book))
+            );
+
+            const del = document.createElement('button');
+            del.type = 'button';
+            del.className = 'delete-btn book-delete';
+            del.textContent = '删除';
+            del.setAttribute('aria-label', `删除单词本 ${book.name}`);
+            del.addEventListener('click', () => removeBook(book));
+
+            actions.appendChild(del);
+            row.appendChild(actions);
+        }
+
         fragment.appendChild(row);
     });
 
@@ -822,6 +876,171 @@ async function removeBook(book) {
         toast('已删除', 'success');
     } catch (err) {
         toast(err.message, 'error');
+    }
+}
+
+/* ---------------- 单词本编辑：重命名 / 复制 / 导出 / 合并 ---------------- */
+
+async function renameBook(book) {
+    const name = await textPrompt({
+        title: '重命名单词本',
+        value: book.name,
+        confirmText: '保存'
+    });
+    if (!name || name === book.name) return;
+
+    try {
+        await api.wordbooks.rename(book.id, name);
+        book.name = name;
+        renderBooks();
+        toast('已重命名', 'success');
+    } catch (err) {
+        toast(err.message, 'error');
+    }
+}
+
+async function duplicateBook(book) {
+    const name = await textPrompt({
+        title: '复制单词本',
+        value: `${book.name} 副本`,
+        confirmText: '下一步'
+    });
+    if (!name) return;
+
+    const withProgress = await chooseDialog({
+        title: '是否保留背诵进度？',
+        message: `将「${book.name}」的 ${book.wordCount} 个单词复制到新本子`,
+        options: [
+            { label: '清空进度（推荐）', value: false, hint: '新本子从零开始背' },
+            { label: '保留进度', value: true, hint: '连同熟练度、正确率一起复制' }
+        ]
+    });
+    if (withProgress === null) return;
+
+    try {
+        await api.wordbooks.duplicate(book.id, { name, withProgress });
+        wordsState.books = await api.wordbooks.list();
+        renderBooks();
+        toast(`已复制为「${name}」`, 'success');
+    } catch (err) {
+        toast(err.message, 'error');
+    }
+}
+
+function buildBookPrintReport(book, words) {
+    const report = printEl('div', 'print-report');
+
+    const head = printEl('div', 'print-head');
+    head.appendChild(printEl('h1', null, book.name || '单词本'));
+    head.appendChild(printEl('p', 'print-meta',
+        `共 ${words.length} 个单词 · 导出于 ${new Date().toLocaleString('zh-CN')}`));
+    report.appendChild(head);
+
+    const rows = words.map(word => [word.term, word.meaning || '—']);
+    report.appendChild(printTable(['单词', '释义'], rows, 'print-logs'));
+    return report;
+}
+
+async function exportBook(book) {
+    const kind = await chooseDialog({
+        title: `导出「${book.name}」`,
+        options: [
+            { label: 'CSV（Excel 可打开）', value: 'csv', hint: '单词 + 释义两列' },
+            { label: 'PDF（打印 / 另存为）', value: 'pdf', hint: '走浏览器打印' }
+        ]
+    });
+    if (!kind) return;
+
+    try {
+        const { book: detail, words } = await api.wordbooks.detail(book.id);
+
+        if (kind === 'csv') {
+            downloadCsv(`${book.name}.csv`,
+                [['单词', '释义'], ...words.map(word => [word.term, word.meaning || ''])]);
+            toast(`已导出 ${words.length} 个单词`, 'success');
+            return;
+        }
+
+        const report = buildBookPrintReport(detail, words);
+        document.querySelectorAll('.print-report').forEach(node => node.remove());
+        document.body.appendChild(report);
+
+        const cleanup = () => {
+            document.body.classList.remove('print-report-open');
+            window.removeEventListener('afterprint', cleanup);
+        };
+        window.addEventListener('afterprint', cleanup);
+        document.body.classList.add('print-report-open');
+        window.print();
+    } catch (err) {
+        toast(err.message, 'error');
+    }
+}
+
+function enterMergeMode() {
+    if (wordsState.books.length < 2) {
+        toast('至少要有两个单词本才能合并', 'info');
+        return;
+    }
+    wordsState.mergeMode = true;
+    wordsState.mergeSelected.clear();
+    renderBooks();
+}
+
+function cancelMergeMode() {
+    wordsState.mergeMode = false;
+    wordsState.mergeSelected.clear();
+    renderBooks();
+}
+
+function toggleMergeSelect(id, checked) {
+    if (checked) wordsState.mergeSelected.add(id);
+    else wordsState.mergeSelected.delete(id);
+    renderBooks();
+}
+
+async function confirmMerge() {
+    const ids = [...wordsState.mergeSelected];
+    if (ids.length < 2) {
+        toast('至少勾选两个单词本', 'error');
+        return;
+    }
+
+    const selected = wordsState.books.filter(book => ids.includes(book.id));
+    const targetId = await chooseDialog({
+        title: '合并到哪一本？',
+        message: `将选中的 ${selected.length} 本合并成一本，其余本子会被删除`,
+        options: selected.map(book => ({
+            label: book.name,
+            value: book.id,
+            hint: `${book.wordCount} 个单词`
+        }))
+    });
+    if (!targetId) return;
+
+    const target = selected.find(book => book.id === targetId);
+    const ok = await confirmDialog({
+        title: '确认合并',
+        message: `把其余 ${selected.length - 1} 本并入「${target.name}」，合并后这些本子会被删除；`
+            + '相同单词自动去重，只保留熟练度高的那条。',
+        confirmText: '合并',
+        danger: true
+    });
+    if (!ok) return;
+
+    setLoading(els.mergeConfirm, true);
+    try {
+        const result = await api.wordbooks.merge(targetId, ids, true);
+        wordsState.books = await api.wordbooks.list();
+        wordsState.mergeMode = false;
+        wordsState.mergeSelected.clear();
+        renderBooks();
+        toast(`已合并 ${result.moved} 个单词${result.skipped ? `，去重 ${result.skipped} 个` : ''}`, 'success');
+    } catch (err) {
+        toast(err.message, 'error');
+    } finally {
+        setLoading(els.mergeConfirm, false);
+        els.mergeConfirm.disabled = wordsState.mergeSelected.size < 2;
     }
 }
 
@@ -3339,6 +3558,11 @@ function cacheElements() {
     els.bookList = $('#bookList');
     els.bookEmpty = $('#bookEmpty');
     els.newBookBtn = $('#newBookBtn');
+    els.mergeBooksBtn = $('#mergeBooksBtn');
+    els.mergeBar = $('#mergeBar');
+    els.mergeHint = $('#mergeHint');
+    els.mergeCancel = $('#mergeCancel');
+    els.mergeConfirm = $('#mergeConfirm');
 
     els.recordsBtn = $('#recordsBtn');
     els.recordsBack = $('#recordsBack');
@@ -3501,6 +3725,9 @@ function bindEvents() {
 
     // 新建 / 导入
     els.newBookBtn.addEventListener('click', openImport);
+    els.mergeBooksBtn.addEventListener('click', enterMergeMode);
+    els.mergeCancel.addEventListener('click', cancelMergeMode);
+    els.mergeConfirm.addEventListener('click', confirmMerge);
     els.importCancel.addEventListener('click', () => showWordView('home'));
 
     // 学习记录
