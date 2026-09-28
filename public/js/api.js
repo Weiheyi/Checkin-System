@@ -621,6 +621,86 @@ function cleanMistakeOptions(options) {
         .filter(item => item.label || item.text);
 }
 
+// 自动收集错题用的单词本名：考核答错、背诵「模糊 / 不认识」都收进这里。
+// 它就是一本普通单词本，收集时复制一份独立的词条 —— 删除只删「错题」本里的副本，不动源单词
+const MISTAKE_WORDBOOK_NAME = '错题';
+
+// 本次会话已解析到的「错题」本 id，避免每次收词都查一遍库；
+// pending 让并发收词（一轮里连续答错几个词）只解析一次，避免同时建出两本「错题」
+let mistakeBookId = null;
+let mistakeBookPending = null;
+
+// 解析 / 按需创建「错题」单词本。离线且本地没有这本时返回 null（新建单词本要联网）
+function findMistakeBook() {
+    if (mistakeBookId) return Promise.resolve({ id: mistakeBookId, name: MISTAKE_WORDBOOK_NAME });
+    if (!mistakeBookPending) {
+        mistakeBookPending = resolveMistakeBook().finally(() => { mistakeBookPending = null; });
+    }
+    return mistakeBookPending;
+}
+
+async function resolveMistakeBook() {
+    const cached = net.cacheValue('books');
+    const hit = Array.isArray(cached)
+        ? cached.find(book => book.name === MISTAKE_WORDBOOK_NAME)
+        : null;
+    if (hit) {
+        mistakeBookId = hit.id;
+        return { id: hit.id, name: hit.name };
+    }
+
+    // 离线又没有缓存：建不了本，交给调用方静默跳过
+    if (net.isOffline()) return null;
+
+    const user = await requireUser();
+
+    const { data, error } = await supabase
+        .from('wordbooks')
+        .select('id, name, created_at')
+        .eq('name', MISTAKE_WORDBOOK_NAME)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+    if (error) fail(error.message, 500);
+
+    let book = data;
+    let created = false;
+    if (!book) {
+        const inserted = await supabase
+            .from('wordbooks')
+            .insert({ user_id: user.id, name: MISTAKE_WORDBOOK_NAME })
+            .select('id, name, created_at')
+            .single();
+        if (inserted.error) fail(inserted.error.message, 500);
+        book = inserted.data;
+        created = true;
+    }
+
+    mistakeBookId = book.id;
+
+    // 新建的本子同步进本地列表缓存，返回工具页就能立刻看到
+    const books = net.cacheValue('books');
+    if (Array.isArray(books) && !books.some(item => item.id === book.id)) {
+        books.unshift({ id: book.id, name: book.name, created_at: book.created_at, wordCount: 0 });
+        net.setCacheValue('books', books);
+    }
+
+    // 刚建的空本顺手种一份内容缓存，收词后「N 个单词」才会即时刷新（见 appendToBookCache）
+    if (created) {
+        net.setCacheValue(`book:${book.id}`, {
+            book: { id: book.id, name: book.name, created_at: book.created_at, wordCount: 0 },
+            words: []
+        });
+    } else if (!net.cacheValue(`book:${book.id}`) && !net.isOffline()) {
+        // 已有本但本地没内容缓存：先拉一次存下来，之后收词就能在本地去重，
+        // 不必每收一个词都把整本拉一遍（一轮考核可能连续收十几个词）
+        await api.wordbooks.detail(book.id).catch(() => {});
+    }
+
+    return { id: book.id, name: book.name };
+}
+
 export const api = {
     async register({ email, nickname, password }) {
         const { data, error } = await supabase.auth.signUp({
@@ -1461,6 +1541,18 @@ export const api = {
 
             appendToBookCache(bookId, inserted[0]);
             return { added: true, word: inserted[0] };
+        },
+
+        // 考核答错 / 背诵「模糊 / 不认识」时自动收进「错题」单词本。
+        // 复制一份独立的词条（不动源单词），同一个词只留一条；离线时对已存在的「错题」本排队补传
+        async addWrongWord({ term, meaning } = {}) {
+            const text = String(term || '').trim();
+            if (!text) return { added: false };
+
+            const book = await findMistakeBook();
+            if (!book) return { added: false, offline: true };
+
+            return api.wordbooks.addWord(book.id, { term: text, meaning });
         },
 
         async create({ name, words }) {

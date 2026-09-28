@@ -1628,6 +1628,7 @@ function startStudy() {
     study.revealed = false;
     study.sessionPromise = null;
     study.warned = false;
+    study.mistakeNotified = false;
     study.result = { known: 0, vague: 0, again: 0 };
 
     els.studySummary.hidden = true;
@@ -1692,6 +1693,7 @@ function markStudy(mark) {
     }
     word.review_count += 1;
     word.last_result = mark;
+    if (mark === 'vague' || mark === 'again') saveWrongWord(word, study);
     logReview('study', study, word, mark, study.queue.length);
 
     study.result[mark] += 1;
@@ -1985,6 +1987,7 @@ function startQuiz() {
     quiz.questionEndsAt = 0;
     quiz.sessionPromise = null;
     quiz.warned = false;
+    quiz.mistakeNotified = false;
 
     els.quizSetup.hidden = true;
     els.quizResult.hidden = true;
@@ -2370,6 +2373,7 @@ function startElim() {
     elim.pending = null;
     elim.sessionPromise = null;
     elim.warned = false;
+    elim.mistakeNotified = false;
 
     els.wrongSetup.hidden = true;
     els.wrongDone.hidden = true;
@@ -2636,6 +2640,7 @@ function applyElimResult(word, correct) {
         word.wrong_count += 1;
         word.mastery = 0;
         word.last_result = 'again';
+        saveWrongWord(word, elim);
     }
     logReview('quiz', elim, word, correct ? 'known' : 'again', elim.total);
 }
@@ -2703,6 +2708,20 @@ function logReview(mode, state, word, result, total) {
         .catch(err => warnRecordFailure(state, `学习记录保存失败：${err.message}`));
 }
 
+// 考核答错 / 背诵「模糊 / 不认识」：把词收进「错题」单词本（复制一份，不动源单词）。
+// 自动收集不属于关键路径：失败不打断作答节奏，整轮成功收到时只提示一次
+function saveWrongWord(word, state) {
+    if (!word || !word.term) return;
+
+    api.wordbooks.addWrongWord({ term: word.term, meaning: word.meaning })
+        .then(result => {
+            if (!result || !result.added || !state || state.mistakeNotified) return;
+            state.mistakeNotified = true;
+            toast('已加入「错题」单词本', 'success');
+        })
+        .catch(() => {});
+}
+
 function applyQuizResult(word, correct) {
     word.review_count += 1;
     if (correct) {
@@ -2713,6 +2732,7 @@ function applyQuizResult(word, correct) {
         word.wrong_count += 1;
         word.mastery = 0;
         word.last_result = 'again';
+        saveWrongWord(word, quiz);
     }
     logReview('quiz', quiz, word, correct ? 'known' : 'again', quiz.questions.length);
 }
