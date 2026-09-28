@@ -5,6 +5,7 @@ import { resolvedTheme, setTheme } from './theme.js';
 import { paintAvatar, showGuideTip, guideTipOff, toast } from './ui.js';
 import { registerOffline } from './offline.js';
 import { initNotifications } from './notifications.js';
+import './transition.js';
 import * as net from './net.js';
 
 // 应用页共用同一套导航，新增页面时只改这里

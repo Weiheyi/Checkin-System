@@ -2,40 +2,56 @@
 :root {
     color-scheme: light;
 
-    /* 界面透明度：由个人中心的滑块控制（100% 即现在这样完全不透明）。
-       面板颜色写成 rgb(r g b / alpha)，改这一个值就能让所有卡片一起变透。 */
+    /* 界面透明度：由个人中心的滑块控制（100% 即完全不透明）。
+       面板颜色写成 oklch(... / var(--ui-alpha))，改这一个值就能让所有卡片一起变透。 */
     --ui-alpha: 100%;
 
-    --color-primary: #5a67d8;
-    --color-primary-dark: #4c51bf;
-    --color-primary-soft: #eef1ff;
-    --color-success: #2f855a;
-    --color-success-soft: #f0fff4;
-    --color-warning: #b7791f;
-    --color-danger: #c53030;
-    --color-danger-soft: #fff5f5;
-    --gradient: linear-gradient(135deg, #5a67d8 0%, #6b46a8 100%);
+    /* 纸 · 墨 · 朱砂：全站改用「宣纸 + 墨色 + 印章色」的东方纸墨体系，
+       和「策索工作室」页同一套语汇 —— 不再是霓虹渐变，而是一纸素面与一方印章。 */
+    --paper: oklch(96.4% 0.014 84);
+    --paper-2: oklch(92.6% 0.018 82);
+    --ink: oklch(23% 0.02 58);
+    --ink-soft: oklch(35% 0.022 60);
+    --ink-mute: oklch(50% 0.022 66);
+    --ink-faint: oklch(63% 0.02 72);
+    --line: oklch(85% 0.02 80);
+    --line-strong: oklch(77% 0.026 78);
 
-    --text-strong: #1a202c;
-    --text: #2d3748;
-    --text-muted: #5b6b7c;
-    --text-faint: #8a94a6;
+    /* 印章色（默认朱砂）；「界面样式」只换这一枚印，纸底与墨色不动 */
+    --seal: oklch(54% 0.19 32);
+    --color-primary: var(--seal);
+    --color-primary-dark: oklch(47% 0.2 30);
+    --color-primary-soft: oklch(93.5% 0.035 40);
+    --color-success: oklch(50% 0.11 150);
+    --color-success-soft: oklch(94.5% 0.04 150);
+    --color-warning: oklch(62% 0.12 72);
+    --color-danger: oklch(52% 0.19 27);
+    --color-danger-soft: oklch(95% 0.035 30);
 
-    --bg: rgb(244 245 251 / var(--ui-alpha));
-    --surface: rgb(255 255 255 / var(--ui-alpha));
-    --surface-soft: rgb(250 251 255 / var(--ui-alpha));
-    --border: #e2e8f0;
-    --border-strong: #cbd5e0;
-    --overlay: rgba(26, 32, 44, 0.5);
+    /* 原来的 135° 霓虹渐变改成「墨」：深墨底，白字依旧稳当 */
+    --gradient: linear-gradient(152deg, oklch(35% 0.03 48) 0%, oklch(21% 0.02 45) 100%);
 
-    --radius-sm: 8px;
-    --radius-md: 12px;
-    --radius-lg: 18px;
+    --text-strong: var(--ink);
+    --text: var(--ink-soft);
+    --text-muted: var(--ink-mute);
+    --text-faint: var(--ink-faint);
+
+    --bg: oklch(95.6% 0.015 84 / var(--ui-alpha));
+    --surface: oklch(98.6% 0.009 86 / var(--ui-alpha));
+    --surface-soft: oklch(92.8% 0.018 83 / var(--ui-alpha));
+    --border: var(--line);
+    --border-strong: var(--line-strong);
+    --overlay: oklch(23% 0.02 58 / 0.5);
+
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 10px;
     --radius-pill: 999px;
 
-    --shadow-1: 0 2px 8px rgba(26, 32, 44, 0.06);
-    --shadow-2: 0 10px 30px rgba(26, 32, 44, 0.1);
-    --shadow-primary: 0 10px 25px rgba(102, 126, 234, 0.35);
+    /* 发丝线代替投影：纸面几乎没有浮起感，只留极淡的一层纸影 */
+    --shadow-1: 0 1px 0 oklch(23% 0.02 58 / 0.035);
+    --shadow-2: 0 24px 60px -32px oklch(23% 0.02 58 / 0.45);
+    --shadow-primary: none;
 
     --space-1: 6px;
     --space-2: 10px;
@@ -43,122 +59,135 @@
     --space-4: 24px;
     --space-5: 32px;
 
-    --transition: 0.2s ease;
-    --ring: 0 0 0 4px rgba(102, 126, 234, 0.14);
+    --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+    --transition: 0.2s var(--ease);
+    --ring: 0 0 0 3px oklch(54% 0.19 32 / 0.22);
 
-    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif;
+    --font-display: "Songti SC", "STSong", "Noto Serif SC", "Source Han Serif SC", "SimSun", serif;
 }
 
-/* 暗色主题：只覆盖颜色类令牌，布局与尺寸复用上面的定义 */
+/* 暗色主题：夜里的墨与纸，只覆盖颜色类令牌，布局与尺寸复用上面的定义 */
 [data-theme="dark"] {
     color-scheme: dark;
 
-    --color-primary: #8b93f8;
-    --color-primary-dark: #6f78f0;
-    --color-primary-soft: #232741;
-    --color-success: #48bb78;
-    --color-success-soft: #16281f;
-    --color-warning: #f6ad55;
-    --color-danger: #fc8181;
-    --color-danger-soft: #2d1a1c;
-    --gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    --paper: oklch(20.5% 0.012 60);
+    --paper-2: oklch(24% 0.014 60);
+    --ink: oklch(93% 0.01 85);
+    --ink-soft: oklch(81% 0.013 82);
+    --ink-mute: oklch(66% 0.018 72);
+    --ink-faint: oklch(54% 0.018 66);
+    --line: oklch(32% 0.02 60);
+    --line-strong: oklch(41% 0.024 60);
 
-    --text-strong: #f1f5f9;
-    --text: #cbd5e0;
-    --text-muted: #94a3b8;
-    --text-faint: #64748b;
+    --seal: oklch(60% 0.17 33);
+    --color-primary: var(--seal);
+    --color-primary-dark: oklch(66% 0.16 33);
+    --color-primary-soft: oklch(29% 0.05 35);
+    --color-success: oklch(70% 0.12 152);
+    --color-success-soft: oklch(24% 0.04 152);
+    --color-warning: oklch(78% 0.12 74);
+    --color-danger: oklch(68% 0.15 27);
+    --color-danger-soft: oklch(28% 0.05 27);
 
-    --bg: rgb(14 16 22 / var(--ui-alpha));
-    --surface: rgb(23 26 35 / var(--ui-alpha));
-    --surface-soft: rgb(27 31 42 / var(--ui-alpha));
-    --border: #262b38;
-    --border-strong: #384052;
-    --overlay: rgba(0, 0, 0, 0.62);
+    --gradient: linear-gradient(152deg, oklch(29% 0.02 60) 0%, oklch(17% 0.014 55) 100%);
 
-    --shadow-1: 0 2px 8px rgba(0, 0, 0, 0.35);
-    --shadow-2: 0 10px 30px rgba(0, 0, 0, 0.5);
-    --shadow-primary: 0 10px 25px rgba(99, 102, 241, 0.3);
+    --text-strong: var(--ink);
+    --text: var(--ink-soft);
+    --text-muted: var(--ink-mute);
+    --text-faint: var(--ink-faint);
 
-    --ring: 0 0 0 4px rgba(139, 147, 248, 0.18);
+    --bg: oklch(18.5% 0.012 58 / var(--ui-alpha));
+    --surface: oklch(23.5% 0.014 58 / var(--ui-alpha));
+    --surface-soft: oklch(21% 0.013 58 / var(--ui-alpha));
+    --border: var(--line);
+    --border-strong: var(--line-strong);
+    --overlay: oklch(0% 0 0 / 0.66);
+
+    --shadow-1: 0 1px 0 oklch(0% 0 0 / 0.3);
+    --shadow-2: 0 24px 60px -30px oklch(0% 0 0 / 0.72);
+    --shadow-primary: none;
+
+    --ring: 0 0 0 3px oklch(60% 0.17 33 / 0.28);
 }
 
 /* ========== 界面样式（配色） ========== */
-/* 只换主色与渐变；浅色 / 深色各一套。data-accent 由个人中心的「界面样式」设置 */
+/* 只换「印章色」与强调；纸底、墨色、发丝线不随配色改变。data-accent 由个人中心的「界面样式」设置 */
 
-/* 晚霞 */
+/* 晚霞 · 赭 */
 [data-accent="sunset"] {
-    --color-primary: #e2622f;
-    --color-primary-dark: #c8501f;
-    --color-primary-soft: #fff0e8;
-    --gradient: linear-gradient(135deg, #f97362 0%, #d946a0 100%);
-    --shadow-primary: 0 10px 25px rgba(226, 98, 47, 0.32);
-    --ring: 0 0 0 4px rgba(226, 98, 47, 0.16);
+    --seal: oklch(58% 0.16 45);
+    --color-primary: var(--seal);
+    --color-primary-dark: oklch(51% 0.17 42);
+    --color-primary-soft: oklch(93.5% 0.04 55);
+    --gradient: linear-gradient(152deg, oklch(36% 0.045 45) 0%, oklch(21% 0.025 38) 100%);
+    --ring: 0 0 0 3px oklch(58% 0.16 45 / 0.22);
 }
 
 [data-theme="dark"][data-accent="sunset"] {
-    --color-primary: #ff9066;
-    --color-primary-dark: #f2743f;
-    --color-primary-soft: #39231d;
-    --gradient: linear-gradient(135deg, #fb7185 0%, #e0518a 100%);
-    --shadow-primary: 0 10px 25px rgba(251, 113, 133, 0.28);
-    --ring: 0 0 0 4px rgba(255, 144, 102, 0.18);
+    --seal: oklch(64% 0.15 48);
+    --color-primary: var(--seal);
+    --color-primary-dark: oklch(70% 0.14 48);
+    --color-primary-soft: oklch(30% 0.05 48);
+    --gradient: linear-gradient(152deg, oklch(30% 0.035 48) 0%, oklch(17% 0.02 40) 100%);
+    --ring: 0 0 0 3px oklch(64% 0.15 48 / 0.28);
 }
 
-/* 大海 */
+/* 大海 · 靛 */
 [data-accent="ocean"] {
-    --color-primary: #0f8ba8;
-    --color-primary-dark: #0b6e86;
-    --color-primary-soft: #e6f7fb;
-    --gradient: linear-gradient(135deg, #22d3ee 0%, #2563eb 100%);
-    --shadow-primary: 0 10px 25px rgba(15, 139, 168, 0.32);
-    --ring: 0 0 0 4px rgba(15, 139, 168, 0.16);
+    --seal: oklch(50% 0.13 235);
+    --color-primary: var(--seal);
+    --color-primary-dark: oklch(43% 0.14 235);
+    --color-primary-soft: oklch(93.5% 0.035 235);
+    --gradient: linear-gradient(152deg, oklch(34% 0.05 240) 0%, oklch(20% 0.03 245) 100%);
+    --ring: 0 0 0 3px oklch(50% 0.13 235 / 0.22);
 }
 
 [data-theme="dark"][data-accent="ocean"] {
-    --color-primary: #4cc9e8;
-    --color-primary-dark: #2fb0d3;
-    --color-primary-soft: #12303a;
-    --gradient: linear-gradient(135deg, #22d3ee 0%, #3b82f6 100%);
-    --shadow-primary: 0 10px 25px rgba(34, 211, 238, 0.26);
-    --ring: 0 0 0 4px rgba(76, 201, 232, 0.18);
+    --seal: oklch(62% 0.12 235);
+    --color-primary: var(--seal);
+    --color-primary-dark: oklch(69% 0.11 235);
+    --color-primary-soft: oklch(28% 0.05 240);
+    --gradient: linear-gradient(152deg, oklch(29% 0.04 240) 0%, oklch(17% 0.02 245) 100%);
+    --ring: 0 0 0 3px oklch(62% 0.12 235 / 0.28);
 }
 
-/* 森林 */
+/* 森林 · 松 */
 [data-accent="forest"] {
-    --color-primary: #2f855a;
-    --color-primary-dark: #276749;
-    --color-primary-soft: #e9f7ef;
-    --gradient: linear-gradient(135deg, #34d399 0%, #15803d 100%);
-    --shadow-primary: 0 10px 25px rgba(47, 133, 90, 0.32);
-    --ring: 0 0 0 4px rgba(47, 133, 90, 0.16);
+    --seal: oklch(49% 0.11 152);
+    --color-primary: var(--seal);
+    --color-primary-dark: oklch(42% 0.12 152);
+    --color-primary-soft: oklch(93.5% 0.035 152);
+    --gradient: linear-gradient(152deg, oklch(33% 0.045 155) 0%, oklch(20% 0.025 160) 100%);
+    --ring: 0 0 0 3px oklch(49% 0.11 152 / 0.22);
 }
 
 [data-theme="dark"][data-accent="forest"] {
-    --color-primary: #63d69b;
-    --color-primary-dark: #45c186;
-    --color-primary-soft: #163025;
-    --gradient: linear-gradient(135deg, #34d399 0%, #059669 100%);
-    --shadow-primary: 0 10px 25px rgba(52, 211, 153, 0.24);
-    --ring: 0 0 0 4px rgba(99, 214, 155, 0.18);
+    --seal: oklch(64% 0.12 155);
+    --color-primary: var(--seal);
+    --color-primary-dark: oklch(70% 0.11 155);
+    --color-primary-soft: oklch(27% 0.05 155);
+    --gradient: linear-gradient(152deg, oklch(29% 0.035 155) 0%, oklch(17% 0.02 160) 100%);
+    --ring: 0 0 0 3px oklch(64% 0.12 155 / 0.28);
 }
 
-/* 樱粉 */
+/* 樱粉 · 胭脂 */
 [data-accent="sakura"] {
-    --color-primary: #d1478a;
-    --color-primary-dark: #b53a74;
-    --color-primary-soft: #fdeef5;
-    --gradient: linear-gradient(135deg, #f9a8d4 0%, #db2777 100%);
-    --shadow-primary: 0 10px 25px rgba(209, 71, 138, 0.3);
-    --ring: 0 0 0 4px rgba(209, 71, 138, 0.16);
+    --seal: oklch(56% 0.16 355);
+    --color-primary: var(--seal);
+    --color-primary-dark: oklch(49% 0.17 355);
+    --color-primary-soft: oklch(94% 0.035 355);
+    --gradient: linear-gradient(152deg, oklch(35% 0.045 355) 0%, oklch(21% 0.025 350) 100%);
+    --ring: 0 0 0 3px oklch(56% 0.16 355 / 0.22);
 }
 
 [data-theme="dark"][data-accent="sakura"] {
-    --color-primary: #f4a0cf;
-    --color-primary-dark: #e97cba;
-    --color-primary-soft: #351d2c;
-    --gradient: linear-gradient(135deg, #f9a8d4 0%, #ec4899 100%);
-    --shadow-primary: 0 10px 25px rgba(236, 72, 153, 0.26);
-    --ring: 0 0 0 4px rgba(244, 160, 207, 0.18);
+    --seal: oklch(68% 0.14 355);
+    --color-primary: var(--seal);
+    --color-primary-dark: oklch(74% 0.13 355);
+    --color-primary-soft: oklch(30% 0.05 355);
+    --gradient: linear-gradient(152deg, oklch(30% 0.035 355) 0%, oklch(17% 0.02 350) 100%);
+    --ring: 0 0 0 3px oklch(68% 0.14 355 / 0.28);
 }
 
 /* ========== 基础 ========== */
@@ -4571,5 +4600,220 @@ button {
     .book-action {
         opacity: 1;
     }
+}
+
+/* ============================================================
+   纸墨改版层
+   令牌已换成「纸 · 墨 · 朱砂」，这里把关键组件从「柔和卡片 + 发光投影」
+   落成「纸面 + 发丝线 + 衬线标题」，并把头像做成一方印章。
+   （放在文件末尾，靠顺序覆盖前面的旧规则。）
+   ============================================================ */
+
+/* 纸纤维底：极淡的斜向纤维 + 纸角微光，替代原来的纯色 / 霓虹渐变 */
+body {
+    background-color: var(--bg);
+    background-image:
+        radial-gradient(120% 90% at 12% 0%, oklch(100% 0 0 / 0.55), transparent 55%),
+        repeating-linear-gradient(115deg, oklch(23% 0.02 58 / 0.014) 0 1px, transparent 1px 3px);
+    background-attachment: fixed;
+}
+
+[data-theme="dark"] body {
+    background-image:
+        radial-gradient(120% 90% at 12% 0%, oklch(70% 0.03 60 / 0.05), transparent 55%),
+        repeating-linear-gradient(115deg, oklch(100% 0 0 / 0.012) 0 1px, transparent 1px 3px);
+}
+
+/* 标题走衬线，正文留无衬线：一眼就和「通篇无衬线的模板感」拉开 */
+h1, h2, h3, h4,
+.card-title,
+.auth-brand h1,
+.brand h1 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+
+.brand h1 { font-size: 19px; }
+.card-title { font-size: 17px; }
+
+/* 卡片：纸面 + 发丝线，去掉浮起阴影 */
+.card {
+    border: 1px solid var(--border);
+    box-shadow: none;
+}
+
+/* 顶部栏：纸面 + 发丝线，sticky 时带一点毛玻璃 */
+.app-header {
+    border: 1px solid var(--border);
+    box-shadow: none;
+    backdrop-filter: saturate(1.15) blur(10px);
+}
+
+/* 导航选中项：一枚实心印章 */
+.app-nav-link { border-radius: var(--radius-pill); }
+.app-nav-link.active {
+    background: var(--color-primary);
+    color: #fff;
+    box-shadow: none;
+}
+
+/* 头像：从圆形渐变改成一方朱印 */
+.avatar {
+    border-radius: var(--radius-sm);
+    background: var(--color-primary);
+    box-shadow: none;
+    font-family: var(--font-display);
+}
+
+/* 主按钮 / 实心强调：去发光，换成实心印章色 */
+.btn-primary,
+.add-task-btn,
+.promo-btn,
+.btn-inline {
+    border-radius: var(--radius-md);
+    box-shadow: none;
+}
+.btn-primary:hover,
+.add-task-btn:hover,
+.promo-btn:hover {
+    box-shadow: none;
+    background: var(--color-primary-dark);
+}
+
+/* hero：一块墨色画心，右下角压一枚淡朱砂印 */
+.hero {
+    background: var(--gradient);
+    border: 1px solid oklch(100% 0 0 / 0.07);
+    box-shadow: var(--shadow-2);
+    position: relative;
+    overflow: hidden;
+}
+.hero::after {
+    content: "";
+    position: absolute;
+    right: -20px;
+    bottom: -20px;
+    width: 104px;
+    height: 104px;
+    border-radius: 8px;
+    background: var(--color-primary);
+    opacity: 0.16;
+    pointer-events: none;
+}
+.hero .date {
+    font-family: var(--font-display);
+    letter-spacing: 0.16em;
+}
+
+/* 工具卡：发丝线 + hover 轻抬 */
+.tool-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    box-shadow: none;
+}
+.tool-card:hover {
+    background: var(--surface);
+    border-color: var(--color-primary);
+    box-shadow: var(--shadow-2);
+    transform: translateY(-2px);
+}
+
+/* 表单控件：发丝线、纸面，聚焦用印章环 */
+.form-group input,
+.form-group textarea,
+.task-input,
+.text-input {
+    border-width: 1px;
+    background: var(--surface);
+}
+.form-group input:focus,
+.form-group textarea:focus,
+.task-input:focus,
+.text-input:focus {
+    border-color: var(--color-primary);
+    box-shadow: var(--ring);
+}
+
+/* 底部导航：纸面 + 发丝线 + 毛玻璃 */
+.tabbar {
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    backdrop-filter: blur(10px);
+}
+
+/* 统计块：靠发丝线框住，而不是纯色块 */
+.stat-item {
+    background: var(--surface-soft);
+    border: 1px solid var(--border);
+}
+.stat-number { font-family: var(--font-display); }
+
+/* 登录页：整屏纸底取代整屏渐变，卡片是纸上一页 */
+.auth-body {
+    background-color: var(--bg);
+    background-image:
+        radial-gradient(120% 90% at 50% 0%, oklch(100% 0 0 / 0.6), transparent 60%),
+        repeating-linear-gradient(115deg, oklch(23% 0.02 58 / 0.014) 0 1px, transparent 1px 3px);
+}
+.auth-box {
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-2);
+}
+
+/* ============================================================
+   页面跳转过渡
+   同一站点内的跨页导航交给 View Transitions（Chromium）：顶部栏 / 底部导航是共享元素，
+   页面本体用一道「墨幕」横向擦过；不支持的浏览器由 js/transition.js 兜底同款墨幕。
+   ============================================================ */
+@view-transition {
+    navigation: auto;
+}
+
+/* 共享元素：跨页时顶部栏与底部导航保持连续，不会闪一下 */
+.app-header { view-transition-name: app-header; }
+.tabbar { view-transition-name: app-tabbar; }
+
+@keyframes ink-wipe-out {
+    from { clip-path: inset(0 0 0 0); }
+    to   { clip-path: inset(0 0 0 100%); }
+}
+@keyframes ink-wipe-in {
+    from { clip-path: inset(0 100% 0 0); }
+    to   { clip-path: inset(0 0 0 0); }
+}
+
+/* 旧页保持不动，新页被揭出来 —— 单层擦拭，干净 */
+::view-transition-old(root) { animation: none; }
+::view-transition-new(root) { animation: ink-wipe-in 0.5s var(--ease) both; }
+
+/* 兜底：不支持的浏览器由 transition.js 插入这块墨幕 */
+.page-wipe {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    pointer-events: none;
+    background: linear-gradient(152deg, oklch(35% 0.03 48), oklch(21% 0.02 45));
+    clip-path: inset(0 0 0 100%);
+    will-change: clip-path;
+}
+.page-wipe.is-cover { animation: ink-wipe-in 0.36s var(--ease) both; }
+.page-wipe.is-reveal { animation: ink-wipe-out 0.42s var(--ease) both; }
+
+/* 兜底路径的内容错峰浮现（走原生过渡时不用 —— 会被截到中间帧） */
+.enter-rise {
+    animation: enter-rise 0.5s var(--ease) both;
+    animation-delay: calc(var(--enter-i, 0) * 55ms);
+}
+@keyframes enter-rise {
+    from { opacity: 0; transform: translateY(14px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    ::view-transition-old(root),
+    ::view-transition-new(root) { animation: none; }
+    .page-wipe { display: none; }
+    .enter-rise { animation: none; }
 }
 

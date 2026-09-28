@@ -10,95 +10,12 @@ import { api } from './api.js';
 import { MISTAKE_DEFAULT_CATEGORIES } from './config.js';
 import { store } from './store.js';
 import { toast, confirmDialog, setLoading, skeletonRows, textPrompt } from './ui.js';
-import { ocrImage } from './file-extract.js';
+import { ocrImage, extractFile } from './file-extract.js';
+import { parseQuestionText, OPTION_LABELS } from './mistake-parse.js';
 import * as net from './net.js';
 
 const OCR_LANG = 'eng';
-const OPTION_LABELS = ['A', 'B', 'C', 'D'];
 const SEED_KEY_PREFIX = 'checkin_mistake_seeded_';
-
-/* ---------------- OCR 文本解析 ---------------- */
-
-// 卷名：优先「2026年9月国际B卷」这类，其次「第3套」
-const PAPER_MONTH = /\d{4}\s*年\s*\d{1,2}\s*月[^\d\n]{0,14}?卷/;
-const PAPER_SET = /第\s*\d{1,3}\s*[套卷]/;
-// 题号：行首的「2.」「2、」「(2)」，后面要跟内容
-const NUMBER_RE = /(?:^|\n)\s*(?:第\s*)?(\d{1,3})\s*(?:题)?\s*[.、)）]\s+\S/;
-// 选项：(A) xxx / A. xxx / A、xxx
-const OPTION_RE = /^\s*[（(]?\s*([A-Da-d])\s*[)）.、:：]\s*(.+)$/;
-// 页眉特征：出现日期、年级、文法等，且带数字，才当页眉剔除
-const HEADER_HINT = /(\d{4}\s*[-/年]\s*\d{1,2}|阅读文法|文法|高[一二三]年级|SAT\s*练习)/;
-
-function normalizePaper(raw) {
-    return String(raw || '')
-        .replace(/\s+/g, '')
-        .replace(/[（(]\s*[）)]/g, '')
-        .trim();
-}
-
-function detectPaper(text) {
-    const t = String(text || '');
-    const month = t.match(PAPER_MONTH);
-    if (month) return normalizePaper(month[0]);
-    const set = t.match(PAPER_SET);
-    return set ? normalizePaper(set[0]) : '';
-}
-
-function detectNumber(text) {
-    const m = String(text || '').match(NUMBER_RE);
-    return m ? m[1] : '';
-}
-
-// 收集 A–D 选项，并记下第一个选项行所在的行号（题干在它之前）
-function parseOptions(text) {
-    const lines = String(text || '').split(/\r?\n/);
-    const options = [];
-    let firstOptionLine = -1;
-
-    lines.forEach((line, index) => {
-        const m = line.match(OPTION_RE);
-        if (!m) return;
-
-        const label = m[1].toUpperCase();
-        const value = m[2].trim();
-        if (!value || options.some(item => item.label === label)) return;
-
-        options.push({ label, text: value });
-        if (firstOptionLine < 0) firstOptionLine = index;
-    });
-
-    return { options, firstOptionLine };
-}
-
-// 题干：第一个选项行之前的文本，去掉明显的页眉行与行首题号
-function cleanStem(lines, paper) {
-    const kept = lines.filter(raw => {
-        const line = raw.trim();
-        if (!line) return false;
-        if (/^\d{1,4}$/.test(line)) return false;                       // 孤立的页码 / 题号行
-        if (paper && line.replace(/\s+/g, '').includes(paper)) return false;
-        if (HEADER_HINT.test(line) && /\d/.test(line)) return false;
-        return true;
-    });
-
-    return kept
-        .join('\n')
-        .replace(/^\s*(?:第\s*)?\d{1,3}\s*(?:题)?\s*[.、)）]\s*/, '')
-        .trim();
-}
-
-// 整段 OCR 文本 -> 表单字段（paper / number / stem / options）
-function parseQuestionText(raw) {
-    const text = String(raw || '');
-    const paper = detectPaper(text);
-    const number = detectNumber(text);
-    const { options, firstOptionLine } = parseOptions(text);
-
-    const lines = text.split(/\r?\n/);
-    const head = firstOptionLine < 0 ? lines : lines.slice(0, firstOptionLine);
-
-    return { paper, number, stem: cleanStem(head, paper), options };
-}
 
 /* ---------------- 小工具 ---------------- */
 
@@ -154,6 +71,12 @@ export function createMistakesTool(panel) {
         screenshotBtn: p$('#mkScreenshotBtn'),
         screenshotStatus: p$('#mkScreenshotStatus'),
         shotPreview: p$('#mkShotPreview'),
+        pasteText: p$('#mkPasteText'),
+        pasteParse: p$('#mkPasteParse'),
+        pasteClear: p$('#mkPasteClear'),
+        pasteStatus: p$('#mkPasteStatus'),
+        textFile: p$('#mkTextFile'),
+        textFileBtn: p$('#mkTextFileBtn'),
         paper: p$('#mkPaper'),
         paperOptions: p$('#mkPaperOptions'),
         number: p$('#mkNumber'),
@@ -782,29 +705,109 @@ export function createMistakesTool(panel) {
         showView('form');
     }
 
-    // OCR 结果预填：只在对应字段为空时填，免得覆盖用户已经手改的内容
-    function applyParsed(parsed) {
+    // 把解析结果填进表单。overwrite=false 时只填空字段（截图自动识别用，免得覆盖手改的内容）；
+    // overwrite=true 时整份覆盖（点「识别并填入」用，用户是主动要重填的）
+    function applyParsed(parsed, { overwrite = false } = {}) {
         let filled = 0;
-        if (parsed.paper && !els.paper.value.trim()) {
-            els.paper.value = parsed.paper;
+        const put = (el, value) => {
+            if (!value) return;
+            if (!overwrite && el.value.trim()) return;
+            el.value = value;
             filled += 1;
+        };
+
+        put(els.paper, parsed.paper);
+        put(els.number, parsed.number);
+        put(els.stem, parsed.stem);
+        put(els.answer, parsed.answer);
+        put(els.myAnswer, parsed.myAnswer);
+        put(els.analysis, parsed.analysis);
+
+        // 选项整组一起填，避免只填到一半的残局
+        if (parsed.options.length >= 2) {
+            const hasAny = OPTION_LABELS.some(label => optionInputs[label].value.trim());
+            if (overwrite || !hasAny) {
+                OPTION_LABELS.forEach(label => { optionInputs[label].value = ''; });
+                parsed.options.forEach(opt => {
+                    const input = optionInputs[opt.label];
+                    if (input) input.value = opt.text;
+                });
+                filled += 1;
+            }
         }
-        if (parsed.number && !els.number.value.trim()) {
-            els.number.value = parsed.number;
-            filled += 1;
-        }
-        if (parsed.stem && !els.stem.value.trim()) {
-            els.stem.value = parsed.stem;
-            filled += 1;
-        }
-        if (parsed.options.length && !OPTION_LABELS.some(label => optionInputs[label].value.trim())) {
-            parsed.options.forEach(opt => {
-                const input = optionInputs[opt.label];
-                if (input) input.value = opt.text;
-            });
-            filled += 1;
-        }
+
         return filled;
+    }
+
+    // 题型按名字对上：有同名的直接选，没有就建一个（只有主动「识别并填入」时才走到这里）
+    async function applyCategory(name) {
+        const norm = value => String(value || '').replace(/\s+/g, '').toLowerCase();
+        const hit = state.categories.find(cat => norm(cat.name) === norm(name));
+        if (hit) {
+            els.category.value = hit.id;
+            return true;
+        }
+
+        const created = await createCategory(name, { autoSelect: true });
+        if (!created) return false;
+        renderCategorySelect();
+        els.category.value = created.id;
+        return true;
+    }
+
+    // 一段文本 -> 表单字段。截图识别与粘贴 / 上传文本都走这里
+    async function parseAndFill(raw, { overwrite = false, withCategory = false } = {}) {
+        const parsed = parseQuestionText(raw);
+        const filled = applyParsed(parsed, { overwrite });
+
+        let category = '';
+        if (withCategory && parsed.category && await applyCategory(parsed.category)) {
+            category = parsed.category;
+        }
+        return { filled, category };
+    }
+
+    // 「识别并填入」：把粘贴框里的整段文本拆进下面各栏
+    async function runPasteParse() {
+        const raw = els.pasteText.value.trim();
+        if (!raw) return toast('先把题目文本粘进来', 'error');
+
+        setLoading(els.pasteParse, true);
+        try {
+            const { filled, category } = await parseAndFill(raw, { overwrite: true, withCategory: true });
+            if (!filled && !category) {
+                setStatus(els.pasteStatus, '没能从这段文本里拆出内容，检查一下格式，或手动填写', 'error');
+            } else {
+                setStatus(els.pasteStatus,
+                    `已填入 ${filled} 个字段${category ? `，题型「${category}」` : ''}，请核对`, 'ok');
+            }
+        } catch (err) {
+            setStatus(els.pasteStatus, err.message, 'error');
+        } finally {
+            setLoading(els.pasteParse, false);
+        }
+    }
+
+    // 上传 PDF / Word / txt：先提文本，再走同一套解析
+    async function handleTextFile(file) {
+        if (!file) return;
+
+        setLoading(els.textFileBtn, true);
+        setStatus(els.pasteStatus, '正在读取文件…');
+        try {
+            const { text, note } = await extractFile(file, msg => setStatus(els.pasteStatus, msg));
+            const raw = String(text || '').trim();
+            if (!raw) throw new Error('文件里没有可读取的文字');
+
+            els.pasteText.value = raw;
+            const { filled, category } = await parseAndFill(raw, { overwrite: true, withCategory: true });
+            setStatus(els.pasteStatus,
+                `${note ? note + '；' : ''}已填入 ${filled} 个字段${category ? `，题型「${category}」` : ''}，请核对`, 'ok');
+        } catch (err) {
+            setStatus(els.pasteStatus, err.message, 'error');
+        } finally {
+            setLoading(els.textFileBtn, false);
+        }
     }
 
     async function handleScreenshot(file) {
@@ -831,7 +834,7 @@ export function createMistakesTool(panel) {
                 onStatus: msg => setStatus(els.screenshotStatus, msg)
             });
 
-            const filled = applyParsed(parseQuestionText(text));
+            const { filled } = await parseAndFill(text, { overwrite: false });
             setStatus(
                 els.screenshotStatus,
                 filled ? '识别完成，请核对下面的内容（可直接修改）' : '识别完成，但没提取到新字段，请手动填写',
@@ -1086,6 +1089,19 @@ export function createMistakesTool(panel) {
                 const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
                 handleScreenshot(file);
             });
+        });
+
+        // 表单：粘贴 / 上传文本自动拆分
+        els.pasteParse.addEventListener('click', runPasteParse);
+        els.pasteClear.addEventListener('click', () => {
+            els.pasteText.value = '';
+            setStatus(els.pasteStatus, '');
+        });
+        els.textFileBtn.addEventListener('click', () => els.textFile.click());
+        els.textFile.addEventListener('change', () => {
+            const file = els.textFile.files[0];
+            els.textFile.value = '';
+            handleTextFile(file);
         });
 
         els.formCancel.addEventListener('click', () => {

@@ -569,6 +569,19 @@
                 </div>
 
                 <div class="form-group">
+                    <label for="mkPasteText">粘贴题目文本（可选，自动拆分填入）</label>
+                    <textarea id="mkPasteText" rows="5"
+                              placeholder="把题目原文、选项、正确答案、解析整段粘进来，点「识别并填入」会自动拆到下面各栏"></textarea>
+                    <div class="upload-row">
+                        <button class="btn-primary" id="mkPasteParse" type="button">识别并填入</button>
+                        <button class="btn-ghost" id="mkTextFileBtn" type="button">上传文件（PDF / Word / txt）</button>
+                        <input type="file" id="mkTextFile" accept=".pdf,.doc,.docx,.rtf,.txt" hidden>
+                        <button class="btn-ghost" id="mkPasteClear" type="button">清空</button>
+                    </div>
+                    <div class="upload-status" id="mkPasteStatus" hidden></div>
+                </div>
+
+                <div class="form-group">
                     <label>题目截图（可选，上传后自动识别）</label>
                     <div class="upload-row">
                         <button class="btn-ghost" id="mkScreenshotBtn" type="button">上传截图 / 拖到此处</button>
