@@ -585,8 +585,10 @@ begin
   return query select target, target_nick;
 end; $$;
 
--- 好友总览（好友列表 + 排行榜：总天数 / 近30天 / 完成任务 / 连续天数）
-create or replace function public.friends_overview()
+-- 好友总览（好友列表 + 排行榜：总天数 / 近30天 / 完成任务 / 连续天数）。
+-- 同 my_stats：p_today 由客户端传本地日期，避免用服务端 UTC 的 current_date 错判一天
+drop function if exists public.friends_overview();
+create or replace function public.friends_overview(p_today date default current_date)
 returns table (
   friend_id uuid, nickname text, avatar_emoji text,
   total_days bigint, days_30 bigint, completed_tasks bigint,
@@ -614,14 +616,14 @@ language sql security definer stable set search_path = public as $$
   ),
   streak as (
     select user_id, max(len) as len from islands
-    where grp_end >= current_date - 1 group by user_id
+    where grp_end >= coalesce(p_today, current_date) - 1 group by user_id
   )
   select
     fl.fid,
     coalesce(nullif(p.nickname, ''), '用户'),
     p.avatar_emoji,
     (select count(*) from cs where cs.user_id = fl.fid),
-    (select count(*) from cs where cs.user_id = fl.fid and cs.checkin_date >= current_date - 29),
+    (select count(*) from cs where cs.user_id = fl.fid and cs.checkin_date >= coalesce(p_today, current_date) - 29),
     (select count(*) from public.tasks t where t.user_id = fl.fid and t.completed),
     (select max(cs.checkin_date) from cs where cs.user_id = fl.fid),
     coalesce((select s.len from streak s where s.user_id = fl.fid), 0)
@@ -775,8 +777,12 @@ language sql security definer stable set search_path = public as $$
   order by fc.created_at asc;
 $$;
 
--- 个人统计一次拿全（替代原来的 4 次 count 请求）
-create or replace function public.my_stats()
+-- 个人统计一次拿全（替代原来的 4 次 count 请求）。
+-- p_today 是客户端本地日期：checkin_date 记的是本地日期，用服务端 UTC 的 current_date
+-- 判断「连续到昨天」会在 UTC+8 的凌晨错判一天，所以由客户端把本地日期传进来。
+-- 加了参数属于换签名，先 drop 掉无参版本，否则旧函数会留在库里
+drop function if exists public.my_stats();
+create or replace function public.my_stats(p_today date default current_date)
 returns table (total_days bigint, total_tasks bigint, completed_tasks bigint, streak int)
 language sql security definer stable set search_path = public as $$
   with me as (select auth.uid() as uid),
@@ -792,7 +798,7 @@ language sql security definer stable set search_path = public as $$
     (select count(*) from cs),
     (select count(*) from public.tasks t where t.user_id = (select uid from me)),
     (select count(*) from public.tasks t where t.user_id = (select uid from me) and t.completed),
-    coalesce((select max(len) from islands where grp_end >= current_date - 1), 0);
+    coalesce((select max(len) from islands where grp_end >= coalesce(p_today, current_date) - 1), 0);
 $$;
 
 -- 开始一次背诵 / 考核，返回会话 id；前端在第一次作答时才创建，避免留下空记录
@@ -1202,11 +1208,11 @@ end; $$;
 revoke all on function public.are_friends(uuid, uuid)      from public, anon;
 revoke all on function public.can_view_checkin(uuid)       from public, anon;
 revoke all on function public.add_friend_by_email(text)    from public, anon;
-revoke all on function public.friends_overview()           from public, anon;
+revoke all on function public.friends_overview(date)       from public, anon;
 revoke all on function public.friend_feed(int)             from public, anon;
 revoke all on function public.checkin_comments_of(uuid)    from public, anon;
 revoke all on function public.message_overview()           from public, anon;
-revoke all on function public.my_stats()                   from public, anon;
+revoke all on function public.my_stats(date)               from public, anon;
 revoke all on function public.start_study_session(text, uuid, text, int) from public, anon;
 revoke all on function public.record_word_review(uuid, uuid, text)       from public, anon;
 revoke all on function public.auto_checkin_if_learned(date, timestamptz, int) from public, anon;
@@ -1224,11 +1230,11 @@ revoke all on function public.mark_notifications_seen(text)              from pu
 grant execute on function public.are_friends(uuid, uuid)   to authenticated;
 grant execute on function public.can_view_checkin(uuid)    to authenticated;
 grant execute on function public.add_friend_by_email(text) to authenticated;
-grant execute on function public.friends_overview()        to authenticated;
+grant execute on function public.friends_overview(date)    to authenticated;
 grant execute on function public.friend_feed(int)          to authenticated;
 grant execute on function public.checkin_comments_of(uuid) to authenticated;
 grant execute on function public.message_overview()        to authenticated;
-grant execute on function public.my_stats()                to authenticated;
+grant execute on function public.my_stats(date)            to authenticated;
 grant execute on function public.start_study_session(text, uuid, text, int) to authenticated;
 grant execute on function public.record_word_review(uuid, uuid, text)       to authenticated;
 grant execute on function public.auto_checkin_if_learned(date, timestamptz, int) to authenticated;

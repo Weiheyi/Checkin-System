@@ -365,9 +365,28 @@ function isLocalTaskId(id) {
     return !SERVER_ID.test(String(id || ''));
 }
 
+// 在线建立的会话：记住这轮的上下文（模式/单词本/题量）。
+// 万一中途断网继续作答，recordReview 的离线分支要靠它把作答补进队列，
+// 否则那一答会无声丢掉（会话在线建好时队列里并没有对应的 study 条目）
+const activeRuns = new Map();
+const ACTIVE_RUN_LIMIT = 20;
+
+function rememberRun(sessionId, run) {
+    if (!sessionId) return;
+    activeRuns.set(sessionId, run);
+    // 只留最近几轮，长时间使用也不会越攒越多
+    while (activeRuns.size > ACTIVE_RUN_LIMIT) {
+        activeRuns.delete(activeRuns.keys().next().value);
+    }
+}
+
 function updateQueuedTask(localId, patch) {
-    const entry = net.pending().find(op => op.kind === 'task.add' && op.localId === localId);
-    if (entry) net.enqueue({ ...entry, ...patch });
+    const target = net.pending().find(op => op.kind === 'task.add' && op.localId === localId);
+    if (!target) return;
+
+    // 目标条目正被同步（不能并进去）：另起一条并标注 continuation，
+    // 让同步处理器按「已存在的同内容任务」更新 / 删除，而不是再插一条重复任务
+    net.enqueue({ ...target, ...patch, continuation: target.uid === net.syncingUid() });
 }
 
 function offlineToggleTask(id, completed) {
@@ -445,11 +464,38 @@ net.registerSyncHandler('checkin', async op => {
 });
 
 net.registerSyncHandler('task.add', async op => {
-    // 离线期间被删掉的任务不用补传
-    if (op.deleted) return;
+    // 离线期间被删掉、且从未插入过的任务，不用补传
+    if (op.deleted && !op.continuation) return;
 
     const user = await requireUser();
     const checkin = await ensureCheckin(op.day);
+
+    // continuation：这条是「同步正在处理的那条 task.add」的后续改动。
+    // 原条目可能已经插入过，按内容找回同一条，删掉或按 completed 更新，避免插出重复任务；
+    // 找不到就说明原条目还没插入，落到下面正常插入即可
+    if (op.continuation || op.deleted) {
+        const { data, error } = await supabase
+            .from('tasks')
+            .select('id')
+            .eq('checkin_id', checkin.id)
+            .eq('content', op.content)
+            .order('created_at', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+
+        if (error) fail(error.message, 500);
+
+        if (data) {
+            const patch = op.deleted
+                ? supabase.from('tasks').delete().eq('id', data.id)
+                : supabase.from('tasks').update({ completed: !!op.completed }).eq('id', data.id);
+            const { error: writeError } = await patch;
+            if (writeError) fail(writeError.message, 500);
+            return;
+        }
+
+        if (op.deleted) return;
+    }
 
     const { error } = await supabase.from('tasks').insert({
         user_id: user.id,
@@ -473,19 +519,26 @@ net.registerSyncHandler('task.remove', async op => {
 });
 
 net.registerSyncHandler('study', async op => {
-    const session = await supabase.rpc('start_study_session', {
-        p_mode: op.mode,
-        p_book_id: op.bookId || null,
-        p_book_name: op.bookName || '',
-        p_total: op.total || 0
-    });
+    // runId 是服务端 uuid 时，说明会话已经在线建好了（中途断网接着答）：
+    // 直接往同一个会话补明细，不要再建一个，否则会多出一条空的重复记录
+    let sessionId = SERVER_ID.test(String(op.runId || '')) ? op.runId : null;
 
-    if (session.error) fail(session.error.message, 500);
+    if (!sessionId) {
+        const session = await supabase.rpc('start_study_session', {
+            p_mode: op.mode,
+            p_book_id: op.bookId || null,
+            p_book_name: op.bookName || '',
+            p_total: op.total || 0
+        });
+
+        if (session.error) fail(session.error.message, 500);
+        sessionId = session.data || null;
+    }
 
     // 熟练度仍然由服务端算，客户端不自己实现一套
     for (const review of op.reviews || []) {
         const { error } = await supabase.rpc('record_word_review', {
-            p_session_id: session.data || null,
+            p_session_id: sessionId,
             p_word_id: review.wordId,
             p_result: review.result
         });
@@ -842,7 +895,8 @@ export const api = {
         return net.cached('stats', async () => {
             await requireUser();
 
-            const { data, error } = await supabase.rpc('my_stats');
+            // 传本地日期进去：checkin_date 记的是本地日期，服务端的 current_date 是 UTC
+            const { data, error } = await supabase.rpc('my_stats', { p_today: todayStr() });
             if (error) fail(error.message, 500);
 
             const row = (data && data[0]) || {};
@@ -1017,10 +1071,11 @@ export const api = {
             return {};
         },
 
-        // 好友列表 + 排行榜数据，一次请求拿到
+        // 好友列表 + 排行榜数据，一次请求拿到。
+        // 连续天数 / 近 30 天按客户端本地日期算，避免服务端 UTC 错判一天
         async overview() {
             await requireUser();
-            const { data, error } = await supabase.rpc('friends_overview');
+            const { data, error } = await supabase.rpc('friends_overview', { p_today: todayStr() });
             if (error) fail(error.message, 500);
             return data || [];
         },
@@ -1682,6 +1737,8 @@ export const api = {
             });
 
             if (error) fail(error.message, 500);
+            // 记下这轮上下文：中途断网时 recordReview 靠它把作答补进队列
+            rememberRun(data, { mode, bookId: bookId || null, bookName: bookName || '', total: total || 0 });
             return data;
         },
 
@@ -2110,16 +2167,26 @@ const ONLINE_ONLY = {
     'profile.changePassword': '修改密码',
     'friends.addByEmail': '添加好友',
     'friends.remove': '删除好友',
+    'friends.overview': '好友列表',
+    'friends.feed': '好友动态',
     'likes.toggle': '点赞',
+    'messages.overview': '私信',
+    'messages.thread': '私信',
+    'messages.unreadCount': '私信',
     'messages.send': '发送私信',
     'messages.markRead': '标记已读',
+    'comments.list': '评论',
     'comments.create': '发表评论',
     'comments.remove': '删除评论',
+    'posts.list': '论坛',
+    'posts.get': '论坛',
     'posts.create': '发帖',
     'posts.remove': '删除帖子',
     'posts.uploadImage': '上传图片',
+    'postComments.list': '论坛',
     'postComments.create': '发表评论',
     'postComments.remove': '删除评论',
+    'feedback.list': '意见反馈',
     'feedback.create': '提交反馈',
     'feedback.remove': '删除反馈',
     'wordReports.create': '提交报错',
@@ -2132,6 +2199,7 @@ const ONLINE_ONLY = {
     'wordbooks.resetProgress': '清空背诵进度',
     'wordbooks.merge': '合并单词本',
     'wordbooks.duplicate': '复制单词本',
+    'wordbooks.wrongWords': '错词记录',
     'notifications.summary': '查看通知',
     'notifications.list': '查看通知',
     'notifications.markSeen': '标记已读',

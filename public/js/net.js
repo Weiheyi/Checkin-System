@@ -25,6 +25,14 @@ let inited = false;
 const listeners = new Set();
 const handlers = new Map();
 
+// 每条待同步队列条目都带一个稳定 uid：同步成功后按 uid 精确删除，
+// 而不是按队列位置删 —— 处理期间新并入的改动会另起一条，不能被一起删掉
+let inFlightUid = null;
+
+function nextUid() {
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 /* ---------------- 存储 ---------------- */
 
 // 缓存与队列都按用户隔离，换账号不会看到别人的数据
@@ -176,7 +184,20 @@ export function localId(prefix = 'local') {
 }
 
 export function pending() {
-    return readStorage('outbox', []);
+    const list = readStorage('outbox', []);
+    if (!Array.isArray(list)) return [];
+
+    // 老版本存下的条目没有 uid，补一个并写回（uid 用于同步时精确删除）
+    let migrated = false;
+    for (const op of list) {
+        if (op && !op.uid) {
+            op.uid = nextUid();
+            migrated = true;
+        }
+    }
+    if (migrated) writeStorage('outbox', list);
+
+    return list;
 }
 
 export function pendingCount() {
@@ -191,38 +212,48 @@ export function lastSyncError() {
     return lastError;
 }
 
-// 能合并的条目就地合并，避免重放时产生重复数据
+// 能合并的条目就地合并，避免重放时产生重复数据。
+// 正在同步的那一条（inFlightUid）不参与合并：它已经交给同步处理器了，
+// 再并进去的改动不会被处理，随后按 uid 删除时还会被一起丢掉
 function mergeOutbox(list, entry) {
+    const free = op => op.uid !== inFlightUid;
+
     const findLast = test => {
         for (let i = list.length - 1; i >= 0; i--) if (test(list[i])) return i;
         return -1;
     };
 
+    // 并进已有条目时保留它的 uid，同步结束时仍按同一个 uid 精确删除
+    const replace = i => {
+        entry.uid = list[i].uid;
+        list[i] = entry;
+    };
+
     if (entry.kind === 'checkin') {
-        const i = findLast(op => op.kind === 'checkin' && op.day === entry.day);
-        if (i >= 0) list[i] = entry;
+        const i = findLast(op => free(op) && op.kind === 'checkin' && op.day === entry.day);
+        if (i >= 0) replace(i);
         else list.push(entry);
         return;
     }
 
     if (entry.kind === 'task.add') {
         // 离线新建的任务：之后勾选 / 删除都改这一条（删除后同步时跳过）
-        const i = findLast(op => op.kind === 'task.add' && op.localId === entry.localId);
-        if (i >= 0) list[i] = entry;
+        const i = findLast(op => free(op) && op.kind === 'task.add' && op.localId === entry.localId);
+        if (i >= 0) replace(i);
         else list.push(entry);
         return;
     }
 
     if (entry.kind === 'task.update' || entry.kind === 'task.remove') {
-        const i = findLast(op => (op.kind === 'task.update' || op.kind === 'task.remove') && op.id === entry.id);
-        if (i >= 0) list[i] = entry;
+        const i = findLast(op => free(op) && (op.kind === 'task.update' || op.kind === 'task.remove') && op.id === entry.id);
+        if (i >= 0) replace(i);
         else list.push(entry);
         return;
     }
 
     if (entry.kind === 'words.add') {
         // 同一本单词本只留一条，并顺手把重复的词去掉（离线时判不了重，先在这里挡一道）
-        const i = findLast(op => op.kind === 'words.add' && op.bookId === entry.bookId);
+        const i = findLast(op => free(op) && op.kind === 'words.add' && op.bookId === entry.bookId);
         if (i < 0) {
             list.push(entry);
             return;
@@ -241,7 +272,7 @@ function mergeOutbox(list, entry) {
 
     if (entry.kind === 'study') {
         // 同一轮背诵 / 考核的逐词作答并到一条里，同步时一次性建会话
-        const i = findLast(op => op.kind === 'study' && op.runId === entry.runId);
+        const i = findLast(op => free(op) && op.kind === 'study' && op.runId === entry.runId);
         if (i >= 0) {
             list[i].reviews.push(...(entry.reviews || []));
             list[i].total = Math.max(list[i].total || 0, entry.total || 0);
@@ -257,10 +288,16 @@ function mergeOutbox(list, entry) {
 
 export function enqueue(op) {
     const list = pending();
-    mergeOutbox(list, { ...op, at: op.at || Date.now() });
+    mergeOutbox(list, { ...op, uid: nextUid(), at: op.at || Date.now() });
     const ok = writeStorage('outbox', list);
     notify();
     return { ok, count: list.length };
+}
+
+// 当前正在同步的那条条目的 uid（没有则为 null）；api.js 用它判断
+// 「这次的改动能不能并进队首那条」，不能并时另起一条并标注 continuation
+export function syncingUid() {
+    return inFlightUid;
 }
 
 // 每条待同步类型由 api.js 注册处理函数（net.js 不直接碰 Supabase）
@@ -295,6 +332,7 @@ async function runSync() {
             const op = pending()[0];
             if (!op) break;
 
+            inFlightUid = op.uid;
             try {
                 const handler = handlers.get(op.kind);
                 if (!handler) throw new Error(`不认识的待同步类型：${op.kind}`);
@@ -303,9 +341,13 @@ async function runSync() {
                 failed = pendingCount();
                 lastError = error.message || '同步失败';
                 break;
+            } finally {
+                inFlightUid = null;
             }
 
-            writeStorage('outbox', pending().slice(1));
+            // 按 uid 精确删掉刚处理完的那条：处理期间又并进来的改动会另起一条
+            // （见 mergeOutbox 的 free()），不会被这一刀顺手删掉
+            writeStorage('outbox', pending().filter(item => item.uid !== op.uid));
             synced += 1;
         }
     } finally {
